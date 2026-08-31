@@ -11,6 +11,10 @@ Issues live in **Linear**, not in this repo's GitHub Issues.
 Creating an issue requires `team`; set `project` so it lands in the right place. Blocking
 relationships are native: `blockedBy` and `blocks` on `save_issue`, both append-only.
 
+**When you pick up a story to work on, move it to `In Progress` immediately** (`save_issue` with
+`state: "In Progress"`), before starting implementation. Don't leave a story you're actively
+working sitting in `Backlog`.
+
 Code lives on GitHub at `nimrodev/ax-page-editor`.
 
 **Commit directly to `main`. Do not open branches or pull requests.** This is a solo repo on a
