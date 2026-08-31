@@ -6,6 +6,7 @@ import { assignAxIds } from "./ax-id";
 import { buildAgentPayload, AgentPayload } from "./agent-payload";
 import { injectBaseHref } from "./base-href";
 import { applyModifications } from "./apply-modifications";
+import { ForwardLinkCache, ForwardCharBudget } from "./link-forward";
 import type { Modification } from "@ax/schema";
 
 export interface FixtureLookup {
@@ -16,6 +17,14 @@ export interface RenderOptions {
   fixtures?: FixtureLookup;
   useFixtures?: boolean;
   modifications?: Modification[];
+  // Shared across renders by the caller so a page with many forwarded
+  // links doesn't refetch them on every preview (NIM-51). A fresh one is
+  // used when omitted, which is correct — just uncached — for callers
+  // (mostly tests) that don't care about that reuse.
+  forwardCache?: ForwardLinkCache;
+  // Total characters forwarded content may consume across this one
+  // render; independent per call, unlike forwardCache.
+  forwardCharBudget?: number;
 }
 
 interface PreparedPage {
@@ -68,8 +77,14 @@ export async function renderPage(
   budget: FetchBudget,
   options: RenderOptions = {},
 ): Promise<AgentPayload> {
-  const { document } = await preparePage(url, fetcher, budget, options);
-  applyModifications(document, options.modifications ?? []);
+  const { document, finalUrl } = await preparePage(url, fetcher, budget, options);
+  await applyModifications(document, options.modifications ?? [], {
+    pageUrl: finalUrl,
+    fetcher,
+    budget,
+    cache: options.forwardCache ?? new ForwardLinkCache(),
+    charBudget: new ForwardCharBudget(options.forwardCharBudget),
+  });
   return buildAgentPayload(document);
 }
 

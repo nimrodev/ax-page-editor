@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@jest/globals";
+import { describe, expect, it, jest } from "@jest/globals";
 import { JSDOM } from "jsdom";
 import { renderPage, prepareHumanView } from "./render-page";
 import { PageFetcher } from "./fetcher";
@@ -243,5 +243,50 @@ describe("renderPage applies a context note through the seam, against a real fix
     expect(noteBlock!.markdown.trim()).toBe("This is the article's main title.");
     expect(result.html).toContain("This is the article's main title.");
     expect(result.html).toContain("data-ax-context");
+  });
+});
+
+describe("renderPage forwards a link through the seam, against a real fixture", () => {
+  it("fetches the destination through the same guard and inserts its content as a new block", async () => {
+    const store = new FixtureStore();
+    const pageUrl = "https://en.wikipedia.org/wiki/Large_language_model";
+    const destinationUrl = "https://example.com/forwarded";
+
+    const fetchImpl = jest.fn(async (url: string) => {
+      if (url === pageUrl) {
+        return new Response(store.get(pageUrl)!, { status: 200, headers: { "content-type": "text/html" } });
+      }
+      if (url === destinationUrl) {
+        return new Response("<body><p>Forwarded destination content.</p></body>", {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    const fetcher = new PageFetcher(new SsrfGuard({ resolveHost: async () => ["93.184.216.34"] }), {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    const dom = new JSDOM(store.get(pageUrl)!);
+    const anchor = Array.from(dom.window.document.querySelectorAll("a")).find(
+      (a) => a.textContent?.trim() === "Main page",
+    )!;
+    const locator = buildLocator(anchor);
+
+    const result = await renderPage(pageUrl, fetcher, new FetchBudget(), {
+      modifications: [
+        { id: "m1", type: "forwardLink", target: locator, value: { href: destinationUrl } },
+      ],
+    });
+
+    const forwardBlock = result.markdownBlocks.find((b) => b.markdown.includes("Forwarded destination content"));
+    expect(forwardBlock).toBeDefined();
+    expect(forwardBlock!.markdown).toContain(destinationUrl);
+    expect(result.html).toContain("data-ax-forward");
+    // The anchor is fetched through the same SsrfGuard as the target
+    // page — confirmed by both fetches succeeding under the same guard
+    // instance, with no separate unguarded path taken.
+    expect(fetchImpl).toHaveBeenCalledWith(destinationUrl, expect.anything());
   });
 });

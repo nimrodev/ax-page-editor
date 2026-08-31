@@ -8,9 +8,17 @@ interface InspectorProps {
   onHide: (selection: Selection) => void;
   onRemove: (modificationId: string) => void;
   onSetContext: (selection: Selection, text: string) => void;
+  onForwardLink: (selection: Selection) => void;
 }
 
-export function Inspector({ selection, modifications, onHide, onRemove, onSetContext }: InspectorProps) {
+export function Inspector({
+  selection,
+  modifications,
+  onHide,
+  onRemove,
+  onSetContext,
+  onForwardLink,
+}: InspectorProps) {
   const hideModification = selection
     ? modifications.find((m) => m.type === "hide" && m.target.path === selection.locator.path)
     : undefined;
@@ -21,6 +29,17 @@ export function Inspector({ selection, modifications, onHide, onRemove, onSetCon
           m.type === "context" && m.target.path === selection.locator.path,
       )
     : undefined;
+
+  // Forwarding is offered only for a link selection (NIM-51's own
+  // acceptance criterion), and only when it actually has a destination —
+  // an <a> with no href isn't a link an agent could follow anyway.
+  const forwardModification = selection
+    ? modifications.find(
+        (m): m is Extract<Modification, { type: "forwardLink" }> =>
+          m.type === "forwardLink" && m.target.path === selection.locator.path,
+      )
+    : undefined;
+  const canForward = selection?.tag === "a" && !!selection.href;
 
   const [draftText, setDraftText] = useState("");
 
@@ -100,6 +119,29 @@ export function Inspector({ selection, modifications, onHide, onRemove, onSetCon
               )}
             </div>
           </div>
+
+          {canForward && (
+            <div className="border-t border-slate-100 pt-3">
+              {forwardModification ? (
+                <div className="rounded border border-blue-200 bg-blue-50 p-2">
+                  <p className="text-blue-900">Forwarding linked content to agents</p>
+                  <button
+                    onClick={() => onRemove(forwardModification.id)}
+                    className="mt-1 text-xs font-medium text-blue-700 underline"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => onForwardLink(selection)}
+                  className="w-full rounded bg-slate-800 px-3 py-1.5 text-sm font-medium text-white"
+                >
+                  Forward this link's content
+                </button>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         <p className="mt-3 text-sm text-slate-400">Click an element in the preview to see its details.</p>

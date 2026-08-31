@@ -11,7 +11,7 @@ export interface AgentPayload {
 }
 
 const BLOCK_SELECTOR =
-  "p, h1, h2, h3, h4, h5, h6, li, blockquote, pre, td, th, dt, dd, figcaption, [data-ax-context]";
+  "p, h1, h2, h3, h4, h5, h6, li, blockquote, pre, td, th, dt, dd, figcaption, [data-ax-context], [data-ax-forward]";
 
 const turndown = new TurndownService({ headingStyle: "atx" });
 

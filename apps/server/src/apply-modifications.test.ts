@@ -53,17 +53,22 @@ describe("applyModifications", () => {
     expect(document.querySelector("p")!.textContent).toBe("Keep");
   });
 
-  it("does nothing for forwardLink, not yet implemented", () => {
+  it("does nothing for forwardLink when no forward context is supplied", async () => {
+    // applyModifications's forward context is optional so every existing
+    // caller here — hide/context tests with no fetcher to speak of — keeps
+    // working unchanged. Real forwardLink behavior is exercised in
+    // link-forward.test.ts and render-page.test.ts, where a context is
+    // actually supplied.
     const document = documentFrom("<body><a href='/x'>link</a></body>");
     const target = buildLocator(document.querySelector("a")!);
     const modifications: Modification[] = [
       { id: "m1", type: "forwardLink", target, value: { href: "https://example.com/x" } },
     ];
 
-    expect(() => applyModifications(document, modifications)).not.toThrow();
+    await expect(applyModifications(document, modifications)).resolves.not.toThrow();
     expect(document.querySelector("a")).not.toBeNull();
     expect(document.querySelector("[data-ax-context]")).toBeNull();
-    expect(document.querySelector("[data-ax-forwarded]")).toBeNull();
+    expect(document.querySelector("[data-ax-forward]")).toBeNull();
   });
 });
 

@@ -110,6 +110,7 @@ export const IFRAME_OVERLAY_SCRIPT = `
           axId: match.id,
           tag: match.el.tagName.toLowerCase(),
           text: (match.el.textContent || "").trim().slice(0, 300),
+          href: match.el.getAttribute("href"),
           locator: buildLocator(match.el),
         },
         "*",

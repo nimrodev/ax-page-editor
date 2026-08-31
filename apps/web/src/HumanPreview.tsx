@@ -8,6 +8,7 @@ export interface Selection {
   axId: string;
   tag: string;
   text: string;
+  href: string | null;
   locator: Locator;
 }
 
@@ -16,6 +17,7 @@ interface AxSelectMessage {
   axId: string;
   tag: string;
   text: string;
+  href: string | null;
   locator: Locator;
 }
 
@@ -70,6 +72,7 @@ export function HumanPreview({ url, onSelect }: HumanPreviewProps) {
           axId: event.data.axId,
           tag: event.data.tag,
           text: event.data.text,
+          href: event.data.href,
           locator: event.data.locator,
         });
       }

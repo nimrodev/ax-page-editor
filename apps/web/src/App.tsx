@@ -49,6 +49,16 @@ export default function App() {
     ]);
   }, []);
 
+  const handleForwardLink = useCallback((target: Selection) => {
+    const href = target.href;
+    if (!href) return;
+    const id = modificationId("forwardLink", target.locator.path);
+    setModifications((prev) => [
+      ...prev.filter((m) => m.id !== id),
+      { id, type: "forwardLink", target: target.locator, value: { href } },
+    ]);
+  }, []);
+
   const handleRemove = useCallback((id: string) => {
     setModifications((prev) => prev.filter((m) => m.id !== id));
   }, []);
@@ -214,6 +224,7 @@ export default function App() {
                   onHide={handleHide}
                   onRemove={handleRemove}
                   onSetContext={handleSetContext}
+                  onForwardLink={handleForwardLink}
                 />
               </div>
             )}

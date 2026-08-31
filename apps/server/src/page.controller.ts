@@ -8,6 +8,7 @@ import { SsrfGuard } from "./ssrf-guard";
 import { FetchBudget } from "./fetch-budget";
 import { FetchFailure } from "./fetcher";
 import { FixtureStore } from "./fixture-store";
+import { ForwardLinkCache } from "./link-forward";
 
 const UrlRequestSchema = z.object({ url: z.string().url() });
 
@@ -24,6 +25,12 @@ export class PageController {
   private readonly guard = new SsrfGuard();
   private readonly fetcher = new PageFetcher(this.guard);
   private readonly fixtures = new FixtureStore();
+  // Lives for the controller's lifetime, so a page with several forwarded
+  // links doesn't refetch them on every preview render (NIM-51) — the
+  // target page itself is never cached this way (ADR-0001); a forwarded
+  // destination's content is not the thing being edited, so re-fetching
+  // it on every keystroke buys nothing.
+  private readonly forwardCache = new ForwardLinkCache();
 
   @Post("page")
   async page(@Body(new ZodValidationPipe(UrlRequestSchema)) body: z.infer<typeof UrlRequestSchema>) {
@@ -42,6 +49,7 @@ export class PageController {
         fixtures: this.fixtures,
         useFixtures,
         modifications: body.modifications,
+        forwardCache: this.forwardCache,
       }),
     );
   }

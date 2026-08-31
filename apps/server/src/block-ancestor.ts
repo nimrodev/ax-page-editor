@@ -20,8 +20,9 @@ const INLINE_TEXT_TAGS = new Set([
  * paragraph, say) is real content, not inline text formatting — but
  * anchoring a note there would still nest it inside the container's own
  * block, reproducing the merge this module exists to avoid. Kept in sync
- * with BLOCK_SELECTOR in agent-payload.ts (minus [data-ax-context], which
- * describes the note itself, not something that can contain a target).
+ * with BLOCK_SELECTOR in agent-payload.ts (minus [data-ax-context] and
+ * [data-ax-forward], which describe inserted nodes themselves, never
+ * something a click could land inside and need to climb out of).
  */
 const BLOCK_CONTAINER_TAGS = new Set([
   "p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "blockquote", "pre",
@@ -79,4 +80,38 @@ export function nearestBlockAncestor(element: Element): Element {
     current = current.parentElement;
   }
   return current;
+}
+
+/**
+ * Places a single node beside a target's nearest block ancestor —
+ * shared by every kind of appended content (a context note, forwarded
+ * link content), which all follow the same rule and the same edge case:
+ * never nested inside the block that would swallow it (nearestBlockAncestor
+ * above), and never duplicated when the same target is re-applied — a
+ * prior node carrying markerAttr in the insertion slot is removed first.
+ * document.body itself has no meaningful "next sibling" (its parent is
+ * <html>), so it's the one anchor that gets a child instead of a sibling;
+ * that's the fallback nearestBlockAncestor returns when nothing
+ * block-level exists above the target at all.
+ */
+export function insertBesideBlockAncestor(
+  document: Document,
+  target: Element,
+  markerAttr: string,
+  buildNode: () => Element,
+): void {
+  const anchor = nearestBlockAncestor(target);
+  const isBodyAnchor = anchor === document.body;
+
+  const existing = isBodyAnchor ? anchor.lastElementChild : anchor.nextElementSibling;
+  if (existing?.hasAttribute(markerAttr)) {
+    existing.remove();
+  }
+
+  const node = buildNode();
+  if (isBodyAnchor) {
+    anchor.appendChild(node);
+  } else {
+    anchor.parentNode?.insertBefore(node, anchor.nextSibling);
+  }
 }
