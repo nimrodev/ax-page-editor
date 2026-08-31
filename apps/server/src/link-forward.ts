@@ -146,6 +146,16 @@ function renderForwardNode(document: Document, result: ForwardResult): Element {
       const body = document.createElement("p");
       body.textContent = result.truncated ? `${result.markdown} (truncated)` : result.markdown;
       node.appendChild(body);
+
+      // Markdown has no closing tag the way the HTML payload's
+      // </div data-ax-forward>` naturally has one — without an explicit
+      // marker, a reader (or an agent) can't tell where forwarded content
+      // stops and the target page's own next block resumes, especially
+      // when the content wasn't truncated and "(truncated)" isn't there
+      // to double as an end signal.
+      const endMarker = document.createElement("p");
+      endMarker.textContent = "— End of forwarded content —";
+      node.appendChild(endMarker);
       break;
     }
     case "unsupported":

@@ -54,6 +54,10 @@ describe("applyForwardLink", () => {
     expect(forward.getAttribute("data-ax-forward")).toBe("");
     expect(forward.textContent).toContain("https://example.com/more");
     expect(forward.textContent).toContain("Extra detail about the topic.");
+    // Markdown has no closing tag — without an explicit end marker there's
+    // no way to tell forwarded content apart from the next real block once
+    // it's serialized to plain text, especially when it wasn't truncated.
+    expect(forward.textContent).toContain("End of forwarded content");
   });
 
   it("skips a link that resolves to the current page, without fetching, and marks it visibly", async () => {
