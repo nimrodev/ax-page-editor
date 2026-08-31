@@ -128,7 +128,7 @@ export default function App() {
         </form>
       </header>
 
-      <main className="mx-auto max-w-5xl px-6 py-8">
+      <main className="mx-auto max-w-[1600px] px-6 py-8">
         {state.status === "idle" && (
           <p className="text-slate-500">
             Enter a URL above to see what an AI agent reads from that page today.
