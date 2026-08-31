@@ -1,170 +1,420 @@
-# AX Page Editor — Build Brief (prompt text)
+# AX Page Editor — Working Brief
 
-I am building a take-home assignment for a Full-Stack role at Axioma, a company building
-"Agent Experience" (AX) infrastructure. It is due Thursday 2026-09-03. I have roughly three
-working evenings/days, ~16-20 hours total. Below is my plan. Stress-test it.
+Single source of truth for this build: requirements, decisions, architecture, scope, and
+vocabulary in one place. Every non-obvious call is recorded here with its reasoning, so the
+README can point at this document rather than re-arguing it.
 
-## The assignment
+Repo: `nimrodev/ax-page-editor` · Assignment: Axioma R&D full-stack take-home.
 
-Build an **AX Editor**: a visual, CMS-style editor (think Elementor or Webflow's inspector
-panel) that lets a publisher load a target webpage, click any element, and annotate or modify
-how that page should appear to AI agents. The user is a publisher/website owner, not a
-developer.
+---
 
-Required user flow: open the editor -> load a target webpage -> the editor renders a preview
--> click an element to select it -> the inspector exposes modification controls -> apply
-modifications across the page -> save the configuration.
+## 1. The assignment, as given
 
-Required frontend (React + TypeScript): two-panel layout (page preview as it would be served
-to an agent after modification, plus a modifications editor); clickable element selection with
-clear visual highlight; inspector reflecting the selected element's tag, text content, and
-current modifications; all three modification types; a save button storing the full
-configuration (format is my design decision); ability to review and remove applied
-modifications.
+Build an **AX Editor** — a visual, CMS-style editor (think Elementor or Webflow's inspector
+panel) that lets a user edit a webpage, click on any element, and annotate or modify how that
+page should appear to AI agents. **The editor is for publishers and website owners, not
+developers. Design accordingly.**
 
-Three mandatory modification types:
-1. **Hide from agents** — mark an element as hidden; if the page is read by an agent, the
-   element must not be accessible to it.
-2. **Add context** — attach explanatory text to any element to enrich it for agents (what a
-   chart shows, what a CTA does, what a section is about). Where this lives in the output and
-   how an agent consumes it is explicitly part of what's being judged.
-3. **Context-forward a link** — most agents don't follow links or run JavaScript, so a good AX
-   follows links on the agent's behalf, server-side. When an `<a>` is selected, fetch what the
-   link leads to and inline that content for the agent.
+**User flow:** open the editor → load a target webpage → the editor renders a preview → click
+any element to select it → a click on the selected element exposes modification controls →
+apply one or more modifications across the page → save the final configuration.
 
-Graded on: product thinking, data schema design, code quality, edge case handling, and
-"finish" — does it feel like a real tool or a scaffolded proof of concept. The assignment is
-deliberately vague; they state they are testing whether I can write a spec and then execute it.
-Deliverables: source code, README (setup, architecture overview, limitations and future
-improvements), and a short screen recording.
+**Technology:** React, TypeScript.
 
-## My framing
+**Three modification types:**
 
-The editor is the visible surface, but the real deliverable is a transform:
-`(source URL, modification set) -> agent-facing representation of the page`.
-The UI is a way to author that modification set. Two consequences drive the architecture:
+1. **Hide an element from agents.** Assuming the page is read by an agent, the element must not
+   be accessible to it.
+2. **Add context to an element.** Attach text that enriches the element for agents — what a
+   chart shows, what a CTA or form input does, what a section is about. *Where this lives in
+   the output and how an agent would consume it is explicitly part of what is being judged.*
+3. **Context-forward a link.** Most agents do not follow links and do not render JavaScript, so
+   a good AX follows links on the agent's behalf, server-side. When an `<a>` is selected, fetch
+   what the link leads to and show it inline to the agent.
 
-1. **Modifications are declarative data applied at render time**, never mutations of a saved
-   HTML copy. The source page changes underneath us; the patch set must degrade gracefully.
-2. **"Hidden from agents" must be true at the byte level.** `display:none`, `aria-hidden`, or
-   a CSS class is not hiding — an agent reading raw HTML still sees the text. Hidden elements
-   are deleted from the agent output. This forces a server-side render path.
+**Judged on:** product thinking · data schema design · code quality · edge case handling ·
+finish (does it feel like a real tool or a scaffolded proof of concept).
 
-## Architecture
+The assignment is deliberately vague. It states the exercise is testing whether a spec can be
+written and then executed, and that anything unclear should be decided, documented, and moved
+past.
 
-**Stack.** npm workspaces: `apps/web` (React + TypeScript + Vite + Tailwind), `apps/server`
-(NestJS + TypeScript, default Express platform), `packages/schema` (shared types + zod validators, so the
-modification schema has exactly one definition). Storage: SQLite (one table, one JSON
-document per normalized URL) behind a repository interface, chosen because the config is
-always read and written whole, needs atomic writes, and requires zero setup from a reviewer —
-Postgres with JSONB is the production answer once there are multiple tenants and concurrent
-editors, and swapping is one file. Server libs: jsdom for the mutable tree, Readability for link extraction,
-sanitize-html for cleaning, Turndown for Markdown.
+---
 
-**Pipeline.** Client POSTs a URL; the server fetches it (SSRF-guarded, timeout, size cap),
-parses to a DOM, sanitizes it (strips `<script>`, `on*` handlers, `javascript:`, form actions,
-nested iframes), rewrites relative URLs to absolute, assigns a `data-ax-id` to every element,
-and returns it. The client renders that HTML into a sandboxed `<iframe srcdoc>` with an
-injected selection overlay; clicks post the ax-id, tag and text back to the host app over
-postMessage. A second endpoint takes `{url, modifications}` and returns the agent-facing
-output.
+## 2. Requirements coverage
 
-I chose an iframe over rendering a parsed JSON tree with React components because it preserves
-the page's real appearance for click-targeting and gives a hard security boundary. I rejected
-Shadow DOM (weaker isolation, host CSS conflicts) and client-side fetching (dies on CORS, and
-removes the server-side link-following the assignment requires).
+Every line of the assignment, and where it is answered. Nothing in this table may be cut.
 
-**Element identity** is the hard problem and I'm solving it first. A modification points at
-"that element", and that pointer must survive a re-fetch, DOM churn, injected nodes, and
-reordering. Each target stores a composite locator: a structural path
-(`main>article>div:nth-of-type(2)>p:nth-of-type(1)`), a content fingerprint
-(`sha1(tag + normalized text + href/src)`), and a human-readable text hint. Resolution is
-graded: exact path match -> path valid but fingerprint mismatch (apply, warn) -> fingerprint
-found elsewhere in the document (re-anchor, record drift) -> no match (mark the modification
-stale, skip it, surface it in the UI). `data-ax-id` is an in-session handle only; it is
-positional and meaningless across re-fetches, so it is never persisted.
+### Must have
 
-**Schema.** One document per URL: a flat, order-independent list of type-tagged modifications,
-each with a stable client-generated id, a target locator, and a typed value. One modification
-per (target, type) — the UI upserts rather than appending duplicates. Nothing derived is
-stored: no cached HTML, no resolved link content, so the document stays readable, diffable and
-portable across page versions. I rejected keying modifications by selector (compact, but makes
-list/remove/diff awkward and collapses when a selector re-anchors).
+| # | Requirement | How it is met |
+|---|---|---|
+| 1 | Two-panel layout: page preview (as served to an agent after modification) + modifications editor | Two panels. The preview has three states — Human view, **Agent view (the default on first load)**, and Compare mode. §6 |
+| 2 | Clickable element selection in the preview, clear visual highlight | Sandboxed iframe with an injected overlay; click posts the element back over `postMessage`; selected element carries a distinct outline. §5 |
+| 3 | Inspector reflecting the selected element's tag, text content, and current modifications | Inspector shows tag, truncated text, resolved locator, and each modification on that element, individually removable. §6 |
+| 4 | Core modification types implemented | All three. §4 |
+| 5 | Save button storing the full configuration (format is my decision) | Explicit Save; one JSON config document per normalized URL in SQLite. §3 |
+| 6 | Ability to review and remove applied modifications | Global modifications list with per-row removal, plus removal from the inspector. Stale and shadowed states rendered distinctly. §6 |
 
-**Agent output.** Two representations from the same modified tree: cleaned semantic HTML, and
-Markdown (what most LLM crawlers actually consume). Hidden elements are removed from the tree
-entirely. Context is emitted as a real, parseable text node adjacent to its element — not a
-`data-*` attribute alone, not an HTML comment, not `aria-label`, because agents that strip
-attributes or comments would lose it, and the entire point is that the agent reads it.
-`data-ax-context` / `data-ax-forwarded` attributes are layered on as provenance markers so a
-downstream consumer can distinguish publisher annotation from original page content. Forwarded
-link content is inlined in a marked section after the anchor.
+### Feature requirements
 
-**Context-forwarding** happens server-side at render time, not at save time: validate the href
-against the SSRF guard, fetch with a ~5s timeout and ~1MB cap, extract the main content, strip
-nav/footer, truncate at a block boundary with explicit truncation marking, and cache by URL
-with a short TTL. Depth is capped at 1 (no recursive forwarding); self and cycle links are
-skipped; non-HTML content types (PDF, image) render a typed placeholder; failed fetches render
-a visible error node rather than silently disappearing.
+| # | Requirement | How it is met |
+|---|---|---|
+| F1 | Hide an element — not accessible to the agent | The element **and its subtree are deleted from the agent payload**. Not `display:none`, not `aria-hidden`, not a CSS class — an agent reading raw HTML would still see those. §4.1 |
+| F2 | Add context — where it lives and how an agent consumes it | Emitted as a **real, parseable text node adjacent to its element**; in HTML `<span data-ax-context>`, in Markdown an adjacent note. Not an attribute alone, not an HTML comment, not `aria-label` — agents that strip those would lose it. `data-ax-*` markers are layered on for provenance so a consumer can tell publisher annotation from original content. §4.2 |
+| F3 | Context-forward a link — fetched server-side, shown inline | Server-side at render time: SSRF-checked, fetched, main content extracted, inlined as a **block** after the anchor's nearest block ancestor so a mid-sentence link does not destroy the sentence. §4.3 |
 
-**Security.** Scheme allowlist; DNS-resolve then block private, loopback, link-local and cloud
-metadata ranges; block redirects landing in those ranges and cap redirect count; sanitize
-fetched HTML before it reaches the iframe; sandbox the preview frame without combining
-`allow-scripts` with `allow-same-origin`; escape user-supplied context text on output; enforce
-request timeouts, response size caps, and a per-render fetch budget.
+### Bonus
 
-## Product decisions
+| # | Bonus | Status |
+|---|---|---|
+| B1 | Load different URLs, not one hardcoded page | **In.** Any server-rendered public URL, with committed fixtures as a fallback. |
+| B2 | Visual diff overlay showing modified elements | **In**, first item of the proof layer (§8, M5). |
+| B3 | Impressive, polished UX | **In** — Compare mode with cross-highlighting, breadcrumb ancestor navigation, modification brush, typed failure states, publisher-facing copy. |
+| B4 | Security (input sanitisation, safe iframe rendering) | **In.** §7 |
+| B5 | Automated tests | **In.** §9 |
 
-- The preview panel has a **Human view / Agent view toggle**. The assignment asks for a preview
-  "as it would be served to an agent"; the toggle satisfies that literally while keeping a
-  styled, clickable surface to author against.
-- A **Compare mode** splits the preview into human-left / agent-right, collapsing the inspector
-  to a strip. It is not the default: three full columns on a laptop leaves a real webpage
-  render too cramped to author against, so Compare is an on-demand mode for reviewing and for
-  the demo. Because the agent output carries the same `data-ax-id`s, selecting an element on
-  the left highlights the corresponding region on the right — and hiding it makes it visibly
-  disappear from the agent pane in real time. Clicking stays left-only; the agent pane is
-  read-only output.
-- **Agent view is the default on first load**, with a one-line banner: "This is what an AI agent
-  sees today." On a JS-heavy page it is nearly empty — that reveal is the demo's opening move.
-- A **live token counter** in the header shows the agent payload shrinking as modifications are
-  applied (e.g. 47,200 -> 6,800 tokens).
-- A **"Test with an agent"** panel sends the before and after agent output to an LLM with fixed
-  questions ("What does this page sell? What's the price? What's the primary CTA?") and shows
-  the two answers side by side — proving the modification changed agent behaviour, not just
-  markup. Ships with recorded fixture responses so it runs with no API key; live mode when
-  `ANTHROPIC_API_KEY` is set.
-- **Selection UX**: a breadcrumb of ancestors under the preview plus arrow-key parent/child
-  navigation, because clicking a `<span>` when you meant the `<section>` is the core usability
-  problem of this kind of editor.
-- The inspector shows tag, truncated text, resolved locator, and the modifications on the
-  selected element, each individually removable. A global modifications list handles review,
-  removal, and surfacing stale modifications.
-- Copy is written for publishers, not developers: "Hide from AI agents", never "set display:none".
+### Deliverables
 
-## Scope and schedule
+| # | Deliverable | Status |
+|---|---|---|
+| D1 | Source code | The repo. |
+| D2 | README: setup and how to run locally including required environment configuration; architecture overview; limitations and future improvements | M6. `npm install && npm run dev` and nothing else; `.env.example` documents the two optional variables. §10 supplies the limitations. |
+| D3 | Short screen recording demonstrating the product end to end | M6, seven scripted beats, ~3 min. §8 |
+| D4 | "You'll likely use AI coding tools. The code you ship should still reflect your judgment and taste." | Every generated file is read and edited before commit. No dead code, no defensive scaffolding nobody asked for, no comments restating the line below them, consistent naming from §13. Domain logic is framework-free so it reads as ours rather than as Nest boilerplate. |
+| D5 | Anything unclear: decide, document, move on | Every ambiguity is decided and recorded — §11 collects them, and the README repeats them. |
 
-Mon night (~3h): scaffold, shared schema package, fetch/sanitize/SSRF. No UI work.
-Tue (~6h): locator + resolver, iframe preview, click-select, inspector, `hide` end to end.
-  Gate at Tue midnight: URL -> click -> agent output actually changes.
-Wed (~7h): `context` and `forwardLink`, save/load, list and remove (~4h); then, in order,
-  token counter, agent-view default, Compare mode with cross-highlighting, breadcrumb
-  navigation, agent A/B panel (~4h).
-  Hard feature freeze Wed 20:00; remaining time goes to error and empty states.
-Thu (~3h): README, SPEC.md, and the screen recording. No coding.
-Tests throughout — Jest on the server (Nest's default, no tooling detour), vitest on the web
-app: the locator resolver (drift, re-anchor, stale), each modification transform, and the SSRF
-guard. The domain layer (locator, transforms, fetcher, sanitizer) is written as plain classes
-and functions with no Nest decorators, so it is unit-testable without a testing module and the
-framework stays confined to the HTTP edge. A single feature module, thin controllers, a small
-zod validation pipe rather than class-validator DTOs so `packages/schema` remains the one
-definition, the SSRF check as a guard, and the forwarded-link cache as an interceptor.
-Triage order if I slip: breadcrumb navigation, then the agent A/B panel, then tests beyond the
-locator suite, then the locator re-anchor tier (still store the fingerprint, document the gap).
-Never cut: the three modification types, save/load, the README, or the recording.
+---
 
-## What I want from you
+## 3. Framing and data model
 
-Grill this plan. Attack the framing, the element-identity scheme, the schema, the choice of
-where context lives in the agent output, the security model, the scope for the time available,
-and whether this reads as a real tool or a proof of concept to the people grading it.
+The editor is the visible surface; the deliverable is a **transform**:
+
+```
+(source URL, modification set) -> agent-facing representation of the page
+```
+
+Two consequences drive everything:
+
+1. **Modifications are declarative data applied at render time** — never mutations of a stored
+   copy of the page. The source page changes underneath us, so the modification set must
+   degrade gracefully when it does.
+2. **Hiding must be true at the byte level**, which forces a server-side render path.
+
+**Config document** — one per normalized URL, flat, order-independent, type-tagged:
+
+```jsonc
+{
+  "version": 1,
+  "url": "https://example.com/pricing",     // original, for display
+  "updatedAt": "…",
+  "modifications": [
+    { "id": "m_01", "type": "hide",        "target": { … } },
+    { "id": "m_02", "type": "context",     "target": { … }, "value": { "text": "…" } },
+    { "id": "m_03", "type": "forwardLink", "target": { … }, "value": { "href": "…", "maxChars": 4000 } }
+  ]
+}
+```
+
+Stable client-generated ids. One modification per (target, type) — the UI upserts rather than
+appending duplicates. **Nothing derived is stored** — no cached HTML, no resolved link content
+— so the document stays readable, diffable, and portable across page versions. Keying
+modifications *by* selector was rejected: compact, but it makes list/remove/diff awkward and
+collapses when a selector re-anchors.
+
+**URL normalization** — lowercase scheme and host, strip `www.`, drop the fragment, strip
+tracking parameters (`utm_*`, `fbclid`, `gclid`), sort the rest, drop a trailing slash. The
+original URL is retained for display. Non-tracking parameters are preserved: `?product=123` is
+a different page.
+
+### 3.1 Element identity — the hard problem, solved first
+
+A modification points at "that element", and the pointer must survive re-fetching, DOM churn,
+injected nodes, and reordering.
+
+```jsonc
+"target": {
+  "path":        "main>article>div:nth-of-type(2)>p:nth-of-type(1)",
+  "fingerprint": "sha1(tag + normalized text + href/src)",
+  "textHint":    "Book a demo"
+}
+```
+
+Resolution is **graded**:
+
+| Tier | Condition | Behaviour |
+|---|---|---|
+| Exact | path resolves, fingerprint matches | apply |
+| Drift | path resolves, fingerprint differs | apply, record drift, warn in UI |
+| Re-anchor | path fails, fingerprint found elsewhere | apply at the new location, record the move |
+| Stale | neither resolves | skip at render, **retain in config**, surface in UI |
+
+`data-ax-id` is a positional, in-session handle wiring preview to inspector. It is never
+persisted, because it is meaningless across re-fetches.
+
+---
+
+## 4. The three modification types
+
+### 4.1 Hide from agents
+Element and entire subtree removed from the agent payload. A hidden `<section>` whose children
+survived would be a plain bug.
+
+### 4.2 Add context
+A real text node adjacent to the element, in both output formats, with `data-ax-context` as a
+provenance marker. Publisher-supplied text is escaped on output.
+
+### 4.3 Context-forward a link
+Server-side at render time, not save time: SSRF-check the href, fetch with ~5s timeout and
+~1MB cap, extract main content, strip nav and footer, truncate at a block boundary with the
+truncation marked. Cached by URL with a short TTL — twenty forwarded links must not mean twenty
+cold fetches per preview.
+
+Bounded and defended: depth 1 (no recursive forwarding) · self and cycle links skipped ·
+duplicate hrefs deduped · ~20k characters total per render · non-HTML content types (PDF,
+image) render a typed placeholder · a failed fetch renders a visible error node rather than
+disappearing silently.
+
+### 4.4 Interaction rules
+Hiding a parent **shadows** descendant modifications: retained in the config, not rendered,
+shown greyed as "hidden by parent", restored when the parent is unhidden. Silently deleting
+them would lose work the user cannot see they lost. `context` and `forwardLink` may coexist on
+one anchor.
+
+---
+
+## 5. Architecture
+
+```
+Browser (React + TS)                 Server (NestJS)
+  POST /api/page   {url}    ──────>  SSRF guard → fetch (honest UA) → sanitize
+                                     → inject <base> → assign data-ax-id
+            <────── {html}
+  render into <iframe sandbox srcdoc> + selection overlay
+  click → postMessage → inspector
+
+  POST /api/render {url, mods} ───>  re-apply pipeline → resolve locators
+                                     → apply modifications → forward links (cached)
+            <────── {markdownBlocks[], html, diagnostics}
+
+  POST /api/config {url, mods} ───>  SQLite repository
+```
+
+**Stack.** npm workspaces — `apps/web` (React + TypeScript + Vite + Tailwind), `apps/server`
+(NestJS on the default Express platform), `packages/schema` (zod + types, the one definition of
+the data model). Server libraries: jsdom, Readability, sanitize-html, Turndown.
+
+**Storage.** SQLite, one table, one JSON document per normalized URL, behind a repository
+interface. The config is always read and written whole, so document-shaped storage is correct;
+SQLite gives atomic writes and safe reads with zero setup from a reviewer. Postgres JSONB is the
+production answer once there are tenants and concurrent editors, with compiled configs pushed
+to edge KV for the agent read path — the repository interface is what makes that a one-file
+change rather than a claim.
+
+**Preview.** A sandboxed `<iframe srcdoc>`, never combining `allow-scripts` with
+`allow-same-origin`. Chosen over rendering a parsed JSON tree with React (loses the page's real
+appearance, and the assignment invokes Elementor/Webflow), Shadow DOM (weaker isolation, host
+CSS conflicts), and client-side fetching (dies on CORS, and removes the server-side link
+following F3 requires). A `<base href>` is injected so the site's own CSS and images resolve —
+one line instead of rewriting every URL.
+
+**Nest guardrails.** One feature module, thin controllers, a small zod validation pipe instead
+of class-validator DTOs so `packages/schema` stays the single definition, the SSRF check as a
+guard, the forwarded-link cache as an interceptor. Domain logic — locator, transforms, fetcher,
+sanitizer — is written as plain classes with no decorators, so the framework stays at the HTTP
+edge and the logic tests without a testing module.
+
+---
+
+## 6. Interface and product decisions
+
+- **Preview states.** Human view (styled, clickable) · **Agent view, the default on first
+  load**, with the banner "This is what an AI agent sees today" · Compare mode.
+- **Compare mode** splits human-left / agent-right and collapses the inspector to a strip. Not
+  the default: three full columns leaves a real page render too cramped to author against.
+  Selecting an element on the left highlights its block on the right; hiding it makes it
+  visibly disappear. Clicking stays left-only — the agent pane is read-only output. A hidden
+  element leaves a thin strikethrough placeholder while selected, so removal is distinguishable
+  from a bug.
+- **Inspector** — tag, truncated text, resolved locator, per-element modifications, each
+  removable.
+- **Modifications list** — global review and removal; where stale and shadowed modifications
+  surface.
+- **Diff overlay**, always on in Human view — dashed red outline hidden, blue badge context,
+  green badge forwarded, plus a legend. Without it a publisher who annotated twelve elements
+  cannot see their own work on the page.
+- **Breadcrumb ancestors + arrow-key parent/child navigation.** Clicking a `<span>` when you
+  meant the `<section>` is the core usability problem of this class of editor.
+- **Single-element selection.** The assignment's "element/s" wording admits a multi-select
+  reading; it is deferred deliberately. Subtree-inclusive hiding plus ancestor navigation cover
+  the dominant case — you hide one `<nav>`, not twelve links — and multi-select drags in a
+  selection-set model, mixed-state controls, and batch-removal semantics for a narrow gain.
+- **Modification brush** — a format painter, as in Word or Sheets. Select an element carrying a
+  modification, activate the brush, click other elements to apply the same one. Selection stays
+  single, so no selection-set model is needed. Copies type and settings but recomputes
+  element-derived values: a brushed `forwardLink` uses the *target* anchor's href. Invalid
+  targets are refused with an explanation. Sticky mode for repeated application.
+- **"Test with an agent" panel** — sends the before and after payloads to an LLM with three
+  fixed questions ("What is this page about? What action does it want the visitor to take? What
+  would you tell someone asking about it?") plus a free-text box, and shows the answers side by
+  side. Fixed prompts keep the comparison rigorous: same question, same model, only the
+  representation differs. Server-side, cached by hash(question + payload), shipping with
+  committed fixture responses so it works with **no API key**; live when `ANTHROPIC_API_KEY` is
+  set.
+- **Payload size** as a split, never a net: `−4,200 noise · +900 context · 3,100 total`. `hide`
+  shrinks the payload while `context` and `forwardLink` grow it, so a single "reduction" figure
+  would show an increase the moment a link is forwarded. Word count, not tokens — token
+  counting is not in the assignment's requirements, so it is built last and cut first.
+- **Typed failure states rendered in the preview pane**, never a toast or a blank frame:
+  blocked by the site (suggest the UA override), timed out, unsupported content type, blocked
+  for security. Publisher language, no status codes.
+- **Copy is written for publishers**: "Hide from AI agents", never "set `display:none`".
+
+---
+
+## 7. Security
+
+Scheme allowlist · DNS-resolve then block private, loopback, link-local and cloud metadata
+ranges · every redirect hop re-checked and the chain capped · sanitize fetched HTML before it
+reaches the iframe (`<script>`, `on*`, `javascript:`, form actions, nested iframes) · sandbox
+without combining `allow-scripts` and `allow-same-origin` · escape publisher-supplied text on
+output · request timeouts, response size caps, a per-render fetch budget.
+
+An honest `AXEditor/1.0` User-Agent, with an `AX_USER_AGENT` override. Spoofing Chrome is the
+wrong instinct to display at a company whose business is the crawler/publisher relationship.
+Verified: Wikipedia, BBC News and Stripe /pricing accept it; REI 403s, which is what the
+override is for. robots.txt is not enforced — stated in the README's limitations.
+
+---
+
+## 8. Milestones
+
+Ordered by dependency, not calendar. Each is a **vertical slice that demos on its own** — never
+a half-built layer. If the clock stops anywhere after M2, what exists is still a coherent tool.
+
+- **M0 · Foundation** — workspaces, `packages/schema` with zod, Nest scaffold, Vite app, root
+  `npm run dev`. Demo pages verified and snapshotted as fixtures.
+- **M1 · See what an agent sees** — SSRF guard, fetcher, sanitizer, `<base>` + ax-ids, Markdown
+  block emitter and HTML emitter, Agent view as the first-load default, typed failure states.
+  *Paste a URL, get the agent payload. No editing yet, and already interesting.*
+- **M2 · Hide one element end to end** — locator builder, graded resolver, URL normalization,
+  iframe preview with selection, inspector, `hide`, Human/Agent toggle. *The core loop works.*
+- **M3 · All three modification types** — `context`, `forwardLink` with its cache and bounds,
+  conflict and shadowing rules. *Every mandatory requirement is met here.*
+- **M4 · Save and restore** — SQLite repository, save with dirty-state indicator and unload
+  guard, modifications list with stale/shadowed states, auto-apply on load with a toast.
+- **M5 · Prove it — all cut candidates, dropped in reverse order:** ① diff overlay ② Compare
+  mode with cross-highlighting ③ A/B agent panel ④ breadcrumb navigation ⑤ modification brush
+  ⑥ dev-only "simulate page drift" control ⑦ payload word count. **Feature freeze on entering
+  M5** — remaining time goes to error and empty states, not new scope.
+- **M6 · Ship, no coding** — README · reconcile this brief against what shipped · screen
+  recording. Beats: cold open on Agent view → select an element → hide it in Compare mode → add
+  context → forward a link → A/B panel → save and restore, closing on one stated limitation.
+  Scripted while the app is fresh, shot the next morning; rehearse once, record twice.
+
+**Never cut:** the three modification types, save and restore, the README, the recording.
+
+---
+
+## 9. Testing
+
+Test-first: write the failing test, confirm it fails for the right reason, implement the
+minimum that passes. That settles *when*. The seam settles **where**, which is what decides
+whether the suite survives refactoring.
+
+**One seam: `POST /api/render`** — URL plus modifications in, agent payload out. The product
+rules are asserted there, against fixture pages, as behaviour rather than structure:
+
+- a hidden element and its subtree are absent from the payload
+- context appears as readable text adjacent to its element
+- forwarded content appears as a block after the anchor's containing block
+- a modification under a hidden parent is shadowed, and returns when the parent is unhidden
+- an element whose path moved is re-anchored by fingerprint
+- an element that no longer exists is reported stale, and the modification is retained
+
+None of these depend on how the resolver, emitter, or sanitizer is arranged internally, so
+reshaping any of them breaks no tests. The alternative — a test per class — produces a suite
+coupled to structure that goes red on the first refactor and gets deleted rather than repaired.
+
+**Tested directly:** the SSRF guard (security-critical, and its cases are awkward to provoke
+through the endpoint) and URL normalization (a pure function over a table). The zod schema gets
+round-trip tests.
+
+**Not tested, deliberately:** React components, and no Playwright e2e. The behaviour worth
+protecting lives in the transform. Jest on the server (Nest's default, no tooling detour),
+vitest on the web.
+
+---
+
+## 10. Limitations and future work
+
+| Limitation | Future direction |
+|---|---|
+| No JavaScript execution; client-rendered SPAs yield an empty DOM with nothing to annotate | Headless rendering (Playwright) for JS-rendered pages |
+| robots.txt not enforced | Honor robots and `Crawl-delay` before any production crawl |
+| Forwarding capped at depth 1 | Configurable depth with cycle detection and a global budget |
+| Single-element selection | Select-similar: apply a modification to every structurally matching element — the single-page form of domain rules |
+| Configurations are not served to real agent traffic | `GET /ax/render` with User-Agent content negotiation; `llms.txt` export |
+| Single-node SQLite, single user, no auth | Postgres JSONB as system of record; compiled configs at the edge for the agent read path |
+| No agent-readability guidance | A linter scoring pages for agent legibility — ambiguous link text, unlabelled inputs, missing alt text, no heading hierarchy — with one-click fixes |
+
+---
+
+## 11. Ambiguities decided
+
+The assignment says to decide, document, and move on. These are the calls, each with its reason:
+
+1. **"A click on selected element/s"** — read as single-element selection. Subtree-inclusive
+   hiding plus ancestor navigation cover the dominant case, and the brush covers repetition
+   without a selection-set model. (§6)
+2. **Which pages the tool targets** — server-rendered only. The pipeline never executes
+   scripts, so a client-rendered SPA yields an empty DOM with nothing to annotate; the limit is
+   stated rather than half-solved. (§10)
+3. **Configuration format** — left to me by the assignment: one JSON document per normalized
+   URL. (§3)
+4. **Where context lives in the output** — real, parseable text adjacent to the element, not
+   metadata. This is the call the assignment flags as being judged. (§4.2)
+5. **"Preview as it would be served to an agent"** — Agent view is literally that, and is the
+   first-load default. Human view exists because you cannot author against raw text. (§6)
+6. **Fetch politeness** — honest User-Agent, no robots.txt enforcement, override documented.
+   (§7)
+
+---
+
+## 12. Acceptance criteria
+
+1. `npm install && npm run dev` from a clean clone produces a working app — no Docker, no
+   required environment variables.
+2. Two panels are present, and the selected element carries a clear visual highlight.
+3. Any page loads by URL; any element can be clicked; the inspector shows its tag, text, and
+   modifications.
+4. All three modification types apply and are visible in the agent payload.
+5. A hidden element is absent from the agent payload, verifiable by reading the raw output.
+6. Context appears in the agent payload as readable text.
+7. A forwarded link's destination content appears inline in the agent payload.
+8. Modifications can be reviewed and individually removed.
+9. A configuration survives save, reload, and re-fetch of a changed source page — drifted
+   modifications re-anchor, unresolvable ones surface as stale rather than vanishing.
+10. A failed page load renders a specific, human explanation inside the preview.
+
+---
+
+## 13. Vocabulary
+
+Used consistently in code, UI copy, and the README.
+
+- **AX (Agent Experience)** — how a page presents itself to AI agents, as distinct from to humans.
+- **Target page** — the third-party page being edited. Never modified at source; only its representation is.
+- **Modification** — one declarative, type-tagged instruction (`hide` | `context` | `forwardLink`) attached to one element.
+- **Configuration** — the full set of modifications for one normalized URL. The unit of save, load, and storage.
+- **Locator** — the composite pointer identifying an element across re-fetches: path + fingerprint + text hint.
+- **Fingerprint** — `sha1(tag + normalized text + href/src)`; content identity, used to re-anchor when the path breaks.
+- **ax-id (`data-ax-id`)** — positional, in-session-only handle wiring preview to inspector. Never persisted.
+- **Drift** — the path no longer resolves but the fingerprint matches elsewhere; the modification re-anchors.
+- **Stale modification** — neither path nor fingerprint resolves; skipped at render, surfaced in the UI, kept in the config.
+- **Shadowed modification** — valid, but inside a hidden subtree; not rendered, not deleted.
+- **Agent payload** — the modified representation served to agents: Markdown blocks by default, cleaned HTML alongside.
+- **Human view / Agent view / Compare mode** — the three preview states.
+- **Provenance marker** — a `data-ax-*` attribute letting a consumer tell publisher annotation from original content.
+- **Seam** — where tests attach. There is one: `POST /api/render`.
+- **Cold open** — the first-load state showing Agent view: what an agent sees today.
