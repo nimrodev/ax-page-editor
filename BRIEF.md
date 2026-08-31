@@ -70,7 +70,7 @@ Every line of the assignment, and where it is answered. Nothing in this table ma
 |---|---|---|
 | B1 | Load different URLs, not one hardcoded page | **In.** Any server-rendered public URL, with committed fixtures as a fallback. |
 | B2 | Visual diff overlay showing modified elements | **In**, first item of the proof layer (§8, M5). |
-| B3 | Impressive, polished UX | **In** — Compare mode with cross-highlighting, breadcrumb ancestor navigation, modification brush, typed failure states, publisher-facing copy. |
+| B3 | Impressive, polished UX | **In** — Compare mode with cross-highlighting, breadcrumb ancestor navigation, multi-element selection, typed failure states, publisher-facing copy. |
 | B4 | Security (input sanitisation, safe iframe rendering) | **In.** §7 |
 | B5 | Automated tests | **In.** §9 |
 
@@ -245,15 +245,23 @@ edge and the logic tests without a testing module.
   cannot see their own work on the page.
 - **Breadcrumb ancestors + arrow-key parent/child navigation.** Clicking a `<span>` when you
   meant the `<section>` is the core usability problem of this class of editor.
-- **Single-element selection.** The assignment's "element/s" wording admits a multi-select
-  reading; it is deferred deliberately. Subtree-inclusive hiding plus ancestor navigation cover
-  the dominant case — you hide one `<nav>`, not twelve links — and multi-select drags in a
-  selection-set model, mixed-state controls, and batch-removal semantics for a narrow gain.
-- **Modification brush** — a format painter, as in Word or Sheets. Select an element carrying a
-  modification, activate the brush, click other elements to apply the same one. Selection stays
-  single, so no selection-set model is needed. Copies type and settings but recomputes
-  element-derived values: a brushed `forwardLink` uses the *target* anchor's href. Invalid
-  targets are refused with an explanation. Sticky mode for repeated application.
+- **Multi-element selection.** The assignment says "a click on selected element/s", so
+  selecting several and acting on them together is supported. Plain click selects one;
+  cmd/ctrl-click adds or removes. Two decisions keep it cheap:
+  - **Actions are commands, not toggles.** Applying "Hide from AI agents" to a selection where
+    some elements are already hidden hides the rest and no-ops on those — so there is no
+    mixed-state rendering and no tri-state controls, which is where a naive multi-select spends
+    most of its cost.
+  - **Removal is not offered in multi-select.** Batch removal ("which modification, from which
+    subset?") is fiddly for no gain; removal stays in the modifications list and the
+    single-element inspector, where it already works.
+
+  With more than one element selected the inspector becomes a compact bar — "5 elements
+  selected" plus the applicable actions, with forward-link disabled unless every selection is
+  an `<a>`. Applying creates one modification per element, each with its own locator; the
+  schema is unchanged, since it is already a flat list. If a selected element is an ancestor of
+  another, the descendant is skipped on hide — the ancestor's subtree already covers it, and
+  storing it would create a modification that is immediately shadowed.
 - **"Test with an agent" panel** — sends the before and after payloads to an LLM with three
   fixed questions ("What is this page about? What action does it want the visitor to take? What
   would you tell someone asking about it?") plus a free-text box, and shows the answers side by
@@ -304,8 +312,8 @@ a half-built layer. If the clock stops anywhere after M2, what exists is still a
 - **M4 · Save and restore** — SQLite repository, save with dirty-state indicator and unload
   guard, modifications list with stale/shadowed states, auto-apply on load with a toast.
 - **M5 · Prove it — all cut candidates, dropped in reverse order:** ① diff overlay ② Compare
-  mode with cross-highlighting ③ A/B agent panel ④ breadcrumb navigation ⑤ modification brush
-  ⑥ dev-only "simulate page drift" control ⑦ payload word count. **Feature freeze on entering
+  mode with cross-highlighting ③ A/B agent panel ④ breadcrumb navigation ⑤ dev-only
+  "simulate page drift" control ⑥ payload word count. **Feature freeze on entering
   M5** — remaining time goes to error and empty states, not new scope.
 - **M6 · Ship, no coding** — README · reconcile this brief against what shipped · screen
   recording. Beats: cold open on Agent view → select an element → hide it in Compare mode → add
@@ -353,7 +361,8 @@ vitest on the web.
 | No JavaScript execution; client-rendered SPAs yield an empty DOM with nothing to annotate | Headless rendering (Playwright) for JS-rendered pages |
 | robots.txt not enforced | Honor robots and `Crawl-delay` before any production crawl |
 | Forwarding capped at depth 1 | Configurable depth with cycle detection and a global budget |
-| Single-element selection | Select-similar: apply a modification to every structurally matching element — the single-page form of domain rules |
+| No way to apply an existing modification to elements found later | A format-painter brush: pick up a modification and apply it by clicking, which multi-select cannot do after the fact or across long scroll distances |
+| Selection is manual | Select-similar: apply a modification to every structurally matching element at once — the single-page form of the domain rules below |
 | Configurations are not served to real agent traffic | `GET /ax/render` with User-Agent content negotiation; `llms.txt` export |
 | Single-node SQLite, single user, no auth | Postgres JSONB as system of record; compiled configs at the edge for the agent read path |
 | No agent-readability guidance | A linter scoring pages for agent legibility — ambiguous link text, unlabelled inputs, missing alt text, no heading hierarchy — with one-click fixes |
@@ -364,9 +373,9 @@ vitest on the web.
 
 The assignment says to decide, document, and move on. These are the calls, each with its reason:
 
-1. **"A click on selected element/s"** — read as single-element selection. Subtree-inclusive
-   hiding plus ancestor navigation cover the dominant case, and the brush covers repetition
-   without a selection-set model. (§6)
+1. **"A click on selected element/s"** — read as supporting multi-element selection, since the
+   plural is explicit. Kept affordable by treating actions as commands rather than toggles and
+   by leaving removal to the single-element inspector. (§6)
 2. **Which pages the tool targets** — server-rendered only. The pipeline never executes
    scripts, so a client-rendered SPA yields an empty DOM with nothing to annotate; the limit is
    stated rather than half-solved. (§10)
