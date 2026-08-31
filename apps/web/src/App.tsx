@@ -221,6 +221,7 @@ export default function App() {
                 <Inspector
                   selection={selection}
                   modifications={modifications}
+                  modificationStatuses={state.status === "ready" ? state.payload.modificationStatuses : []}
                   onHide={handleHide}
                   onRemove={handleRemove}
                   onSetContext={handleSetContext}

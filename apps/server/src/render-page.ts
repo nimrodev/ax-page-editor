@@ -5,7 +5,7 @@ import { sanitizeDocument } from "./sanitizer";
 import { assignAxIds } from "./ax-id";
 import { buildAgentPayload, AgentPayload } from "./agent-payload";
 import { injectBaseHref } from "./base-href";
-import { applyModifications } from "./apply-modifications";
+import { applyModifications, ModificationStatus } from "./apply-modifications";
 import { ForwardLinkCache, ForwardCharBudget } from "./link-forward";
 import type { Modification } from "@ax/schema";
 
@@ -66,6 +66,14 @@ async function preparePage(
   return { document: dom.window.document, finalUrl };
 }
 
+export interface RenderResult extends AgentPayload {
+  // Per-modification outcome for this render (NIM-52) — "shadowed" (inside
+  // a hidden subtree, retained but not applied) told apart from
+  // "unresolved" (the locator itself didn't resolve). Absent entries never
+  // happen: every submitted modification, deduped, gets exactly one status.
+  modificationStatuses: ModificationStatus[];
+}
+
 /**
  * The transform at the heart of the product: a target URL becomes an agent
  * payload. Nothing here depends on NestJS, so it tests without a testing
@@ -76,16 +84,16 @@ export async function renderPage(
   fetcher: PageFetcher,
   budget: FetchBudget,
   options: RenderOptions = {},
-): Promise<AgentPayload> {
+): Promise<RenderResult> {
   const { document, finalUrl } = await preparePage(url, fetcher, budget, options);
-  await applyModifications(document, options.modifications ?? [], {
+  const modificationStatuses = await applyModifications(document, options.modifications ?? [], {
     pageUrl: finalUrl,
     fetcher,
     budget,
     cache: options.forwardCache ?? new ForwardLinkCache(),
     charBudget: new ForwardCharBudget(options.forwardCharBudget),
   });
-  return buildAgentPayload(document);
+  return { ...buildAgentPayload(document), modificationStatuses };
 }
 
 /**

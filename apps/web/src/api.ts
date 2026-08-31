@@ -5,9 +5,15 @@ export interface MarkdownBlock {
   markdown: string;
 }
 
+export interface ModificationStatus {
+  id: string;
+  status: "applied" | "shadowed" | "unresolved";
+}
+
 export interface AgentPayload {
   markdownBlocks: MarkdownBlock[];
   html: string;
+  modificationStatuses: ModificationStatus[];
 }
 
 export interface HumanViewPayload {

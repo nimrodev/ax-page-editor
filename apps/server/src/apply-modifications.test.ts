@@ -2,6 +2,10 @@ import { describe, expect, it } from "@jest/globals";
 import { JSDOM } from "jsdom";
 import { buildLocator, Modification } from "@ax/schema";
 import { applyModifications, dedupeModifications } from "./apply-modifications";
+import { PageFetcher } from "./fetcher";
+import { SsrfGuard } from "./ssrf-guard";
+import { FetchBudget } from "./fetch-budget";
+import { ForwardLinkCache, ForwardCharBudget } from "./link-forward";
 
 function documentFrom(html: string) {
   return new JSDOM(html).window.document;
@@ -275,5 +279,161 @@ describe("applyModifications: context targets the nearest block ancestor", () =>
     // sibling" slot (its parent is <html>) — the note must land inside
     // body, not escape into <html> as a sibling of <body>.
     expect(note.parentElement).toBe(document.body);
+  });
+});
+
+describe("applyModifications: shadowing (NIM-52)", () => {
+  it("retains a modification whose target is inside a hidden subtree, and does not apply it", async () => {
+    const document = documentFrom("<body><section><p data-ax-id='ax-1'>Inside</p></section></body>");
+    const section = document.querySelector("section")!;
+    const p = document.querySelector("p")!;
+    const modifications: Modification[] = [
+      { id: "m-hide", type: "hide", target: buildLocator(section) },
+      { id: "m-context", type: "context", target: buildLocator(p), value: { text: "A note" } },
+    ];
+
+    const statuses = await applyModifications(document, modifications);
+
+    // Retained: the section is gone, but nothing about the context
+    // modification itself was deleted or mutated — it's the caller's own
+    // input list, still intact, exactly as NIM-55's review list will need.
+    expect(modifications).toHaveLength(2);
+    expect(document.querySelector("section")).toBeNull();
+    expect(document.querySelector("[data-ax-context]")).toBeNull();
+    expect(statuses).toEqual(
+      expect.arrayContaining([
+        { id: "m-hide", status: "applied" },
+        { id: "m-context", status: "shadowed" },
+      ]),
+    );
+  });
+
+  it("tells a shadowed modification apart from one that plain doesn't resolve", async () => {
+    const document = documentFrom("<body><section><p data-ax-id='ax-1'>Inside</p></section></body>");
+    const section = document.querySelector("section")!;
+    const p = document.querySelector("p")!;
+    const brokenLocator = { path: "html>body>p:nth-of-type(9)", fingerprint: "x", textHint: "x" };
+    const modifications: Modification[] = [
+      { id: "m-hide", type: "hide", target: buildLocator(section) },
+      { id: "m-shadowed", type: "context", target: buildLocator(p), value: { text: "shadowed" } },
+      { id: "m-broken", type: "context", target: brokenLocator, value: { text: "broken" } },
+    ];
+
+    const statuses = await applyModifications(document, modifications);
+
+    expect(statuses.find((s) => s.id === "m-shadowed")?.status).toBe("shadowed");
+    expect(statuses.find((s) => s.id === "m-broken")?.status).toBe("unresolved");
+  });
+
+  it("shadowing is structural, not a race with submission order — a hide submitted after still shadows", async () => {
+    const document = documentFrom("<body><section><p data-ax-id='ax-1'>Inside</p></section></body>");
+    const section = document.querySelector("section")!;
+    const p = document.querySelector("p")!;
+    const modifications: Modification[] = [
+      { id: "m-context", type: "context", target: buildLocator(p), value: { text: "A note" } },
+      { id: "m-hide", type: "hide", target: buildLocator(section) },
+    ];
+
+    const statuses = await applyModifications(document, modifications);
+
+    expect(statuses.find((s) => s.id === "m-context")?.status).toBe("shadowed");
+    expect(document.querySelector("[data-ax-context]")).toBeNull();
+  });
+
+  it("marks a hide nested inside another hide's subtree as shadowed too, not just applied redundantly", async () => {
+    const document = documentFrom(
+      "<body><section><article><p>Inside</p></article></section></body>",
+    );
+    const section = document.querySelector("section")!;
+    const article = document.querySelector("article")!;
+    const modifications: Modification[] = [
+      { id: "m-outer", type: "hide", target: buildLocator(section) },
+      { id: "m-inner", type: "hide", target: buildLocator(article) },
+    ];
+
+    const statuses = await applyModifications(document, modifications);
+
+    expect(statuses).toEqual(
+      expect.arrayContaining([
+        { id: "m-outer", status: "applied" },
+        { id: "m-inner", status: "shadowed" },
+      ]),
+    );
+    // Still gone either way — the outer hide's removal takes the whole
+    // subtree with it regardless of the inner hide's own status.
+    expect(document.querySelector("section")).toBeNull();
+  });
+
+  it("restores a shadowed modification, unchanged, once its hiding ancestor is removed from the configuration", async () => {
+    // Every render re-fetches and re-applies from a clean document
+    // (ADR-0001), so "unhiding" is simply: the next render's modification
+    // list no longer includes the hide. Nothing about the context
+    // modification needed to change for it to apply again.
+    const freshDocument = () =>
+      documentFrom("<body><section><p data-ax-id='ax-1'>Inside</p></section></body>");
+    const p = () => freshDocument().querySelector("p")!;
+    const contextMod: Modification = {
+      id: "m-context",
+      type: "context",
+      target: buildLocator(p()),
+      value: { text: "Still here" },
+    };
+
+    const hiddenRender = freshDocument();
+    const hiddenSection = hiddenRender.querySelector("section")!;
+    const hiddenStatuses = await applyModifications(hiddenRender, [
+      { id: "m-hide", type: "hide", target: buildLocator(hiddenSection) },
+      contextMod,
+    ]);
+    expect(hiddenStatuses.find((s) => s.id === "m-context")?.status).toBe("shadowed");
+
+    const restoredRender = freshDocument();
+    const restoredStatuses = await applyModifications(restoredRender, [contextMod]);
+
+    expect(restoredStatuses).toEqual([{ id: "m-context", status: "applied" }]);
+    const note = restoredRender.querySelector("[data-ax-context]");
+    expect(note).not.toBeNull();
+    expect(note!.textContent).toBe("Still here");
+  });
+
+  it("a context note and a forwarded link coexist on the same anchor without clobbering each other", async () => {
+    const document = documentFrom(
+      "<body><p data-ax-id='ax-1'>See <a data-ax-id='ax-2' href='https://example.com/more'>more</a>.</p></body>",
+    );
+    const anchor = document.querySelector("a")!;
+    const modifications: Modification[] = [
+      { id: "m-context", type: "context", target: buildLocator(anchor), value: { text: "A note" } },
+      {
+        id: "m-forward",
+        type: "forwardLink",
+        target: buildLocator(anchor),
+        value: { href: "https://example.com/more" },
+      },
+    ];
+    const fetchImpl = (async () =>
+      new Response("<body><p>Fetched.</p></body>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      })) as unknown as typeof fetch;
+    const fetcher = new PageFetcher(new SsrfGuard({ resolveHost: async () => ["93.184.216.34"] }), { fetchImpl });
+
+    const statuses = await applyModifications(document, modifications, {
+      pageUrl: "https://example.com/",
+      fetcher,
+      budget: new FetchBudget(),
+      cache: new ForwardLinkCache(),
+      charBudget: new ForwardCharBudget(),
+    });
+
+    expect(statuses).toEqual(
+      expect.arrayContaining([
+        { id: "m-context", status: "applied" },
+        { id: "m-forward", status: "applied" },
+      ]),
+    );
+    expect(document.querySelector("[data-ax-context]")).not.toBeNull();
+    expect(document.querySelector("[data-ax-forward]")).not.toBeNull();
+    const p = document.querySelector("p")!;
+    expect(p.textContent).toBe("See more.");
   });
 });

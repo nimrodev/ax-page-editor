@@ -1,19 +1,33 @@
 import { useEffect, useState } from "react";
 import { Modification } from "@ax/schema";
 import { Selection } from "./HumanPreview";
+import { ModificationStatus } from "./api";
 
 interface InspectorProps {
   selection: Selection | null;
   modifications: Modification[];
+  modificationStatuses: ModificationStatus[];
   onHide: (selection: Selection) => void;
   onRemove: (modificationId: string) => void;
   onSetContext: (selection: Selection, text: string) => void;
   onForwardLink: (selection: Selection) => void;
 }
 
+/**
+ * A modification retained in the configuration but currently covered by
+ * a hidden ancestor (NIM-52) is a different situation from one whose
+ * locator failed to resolve at all — this is the one place in the UI
+ * that distinction needs to be visible.
+ */
+function isShadowed(modificationStatuses: ModificationStatus[], id: string | undefined): boolean {
+  if (!id) return false;
+  return modificationStatuses.find((s) => s.id === id)?.status === "shadowed";
+}
+
 export function Inspector({
   selection,
   modifications,
+  modificationStatuses,
   onHide,
   onRemove,
   onSetContext,
@@ -70,7 +84,11 @@ export function Inspector({
 
           {hideModification ? (
             <div className="rounded border border-blue-200 bg-blue-50 p-2">
-              <p className="text-blue-900">Hidden from AI agents</p>
+              <p className="text-blue-900">
+                {isShadowed(modificationStatuses, hideModification.id)
+                  ? "Hidden from AI agents (currently inside another hidden element)"
+                  : "Hidden from AI agents"}
+              </p>
               <button
                 onClick={() => onRemove(hideModification.id)}
                 className="mt-1 text-xs font-medium text-blue-700 underline"
@@ -91,6 +109,11 @@ export function Inspector({
             <label className="text-xs font-medium text-slate-500">
               Context for agents
             </label>
+            {contextModification && isShadowed(modificationStatuses, contextModification.id) && (
+              <p className="mt-1 text-xs text-amber-700">
+                Hidden by an ancestor — not shown to agents until that's unhidden. Your note is kept, unchanged.
+              </p>
+            )}
             <textarea
               value={draftText}
               onChange={(e) => setDraftText(e.target.value)}
@@ -124,7 +147,11 @@ export function Inspector({
             <div className="border-t border-slate-100 pt-3">
               {forwardModification ? (
                 <div className="rounded border border-blue-200 bg-blue-50 p-2">
-                  <p className="text-blue-900">Forwarding linked content to agents</p>
+                  <p className="text-blue-900">
+                    {isShadowed(modificationStatuses, forwardModification.id)
+                      ? "Forwarding linked content (hidden by an ancestor, not currently applied)"
+                      : "Forwarding linked content to agents"}
+                  </p>
                   <button
                     onClick={() => onRemove(forwardModification.id)}
                     className="mt-1 text-xs font-medium text-blue-700 underline"

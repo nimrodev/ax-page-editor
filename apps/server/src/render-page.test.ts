@@ -290,3 +290,52 @@ describe("renderPage forwards a link through the seam, against a real fixture", 
     expect(fetchImpl).toHaveBeenCalledWith(destinationUrl, expect.anything());
   });
 });
+
+describe("renderPage shadows and restores modifications through the seam, against a real fixture (NIM-52)", () => {
+  it("retains a context note inside a hidden ancestor as shadowed, then restores it once the hide is dropped", async () => {
+    const store = new FixtureStore();
+    const pageUrl = "https://en.wikipedia.org/wiki/Large_language_model";
+    const fetcher = new PageFetcher(new SsrfGuard({ resolveHost: async () => [] }), {
+      fetchImpl: (async () => {
+        throw new Error("fixture mode must not touch the network");
+      }) as unknown as typeof fetch,
+    });
+
+    const dom = new JSDOM(store.get(pageUrl)!);
+    const h1 = dom.window.document.querySelector("h1")!;
+    const header = h1.parentElement!;
+    const h1Locator = buildLocator(h1);
+    const headerLocator = buildLocator(header);
+
+    const shadowed = await renderPage(pageUrl, fetcher, new FetchBudget(), {
+      fixtures: store,
+      useFixtures: true,
+      modifications: [
+        { id: "m-hide", type: "hide", target: headerLocator },
+        { id: "m-context", type: "context", target: h1Locator, value: { text: "Article title" } },
+      ],
+    });
+
+    expect(shadowed.modificationStatuses).toEqual(
+      expect.arrayContaining([
+        { id: "m-hide", status: "applied" },
+        { id: "m-context", status: "shadowed" },
+      ]),
+    );
+    expect(shadowed.markdownBlocks.some((b) => b.markdown.includes("Article title"))).toBe(false);
+    expect(shadowed.markdownBlocks.some((b) => b.markdown.trim() === "Large language model")).toBe(false);
+
+    const restored = await renderPage(pageUrl, fetcher, new FetchBudget(), {
+      fixtures: store,
+      useFixtures: true,
+      // The hide is simply gone from this render's list — nothing about
+      // the context modification itself changed (ADR-0001: every render
+      // re-applies from scratch, so "unhiding" needs no special code path).
+      modifications: [{ id: "m-context", type: "context", target: h1Locator, value: { text: "Article title" } }],
+    });
+
+    expect(restored.modificationStatuses).toEqual([{ id: "m-context", status: "applied" }]);
+    expect(restored.markdownBlocks.some((b) => b.markdown.includes("Article title"))).toBe(true);
+    expect(restored.markdownBlocks.some((b) => b.markdown.trim() === "Large language model")).toBe(true);
+  });
+});
