@@ -40,9 +40,45 @@ The editor is the authoring surface for the modification set. The transform is t
 4. **Provenance is preserved.** A downstream consumer can distinguish publisher-authored
    annotation from original page content.
 
-## 3. Scope
+## 3. User Stories
 
-### 3.1 In scope
+As a **publisher** (a website owner or content manager, not a developer):
+
+1. As a publisher, I want to see what an AI agent currently reads from my page, so that I can judge whether it represents my content fairly.
+2. As a publisher, I want to load any page of my site by URL, so that I can work on the pages that matter rather than a fixed example.
+3. As a publisher, I want to click any element in a visual preview of my page, so that I can work with the page as I see it rather than by reading its markup.
+4. As a publisher, I want a clear indication of which element I have selected, so that I am confident I am editing the right thing.
+5. As a publisher, I want to select a containing section rather than the small piece of text I clicked, so that I can act on a whole region without hunting for it.
+6. As a publisher, I want to see an element's tag, text, and existing modifications when I select it, so that I understand what I am about to change.
+7. As a publisher, I want to hide navigation, cookie notices, and footer boilerplate from agents, so that the agent reads my content instead of my chrome.
+8. As a publisher, I want hiding to genuinely remove content from what the agent receives, so that I am not merely styling it away while the agent still reads it.
+9. As a publisher, I want to attach an explanation to an element, so that an agent understands what a chart shows, what a form does, or what a section is for.
+10. As a publisher, I want my explanation to be text the agent will actually read, so that my effort is not lost in metadata the agent discards.
+11. As a publisher, I want an agent to be able to tell my annotation apart from my page's original content, so that it can weigh the two appropriately.
+12. As a publisher, I want the content behind a link to be pulled into the page for agents, so that agents that do not follow links still see what I am pointing at.
+13. As a publisher, I want forwarded content placed as its own block, so that a link inside a sentence does not destroy the sentence.
+14. As a publisher, I want to see every modification I have applied in one list, so that I can review my work without clicking through the page.
+15. As a publisher, I want to see on the page itself which elements I have modified, so that I can find my own work at a glance.
+16. As a publisher, I want to remove any modification individually, so that I can undo one decision without discarding the rest.
+17. As a publisher, I want to compare the human page and the agent view side by side, so that I can see the effect of a change as I make it.
+18. As a publisher, I want to save my configuration, so that my work persists beyond the session.
+19. As a publisher, I want my saved configuration applied automatically when I reopen a page, so that I resume where I left off rather than starting blank.
+20. As a publisher, I want to be warned before I navigate away with unsaved changes, so that I do not lose work to a stray refresh.
+21. As a publisher, I want my modifications to keep working after my page's markup changes, so that ordinary site edits do not silently undo my work.
+22. As a publisher, I want to be told which modifications no longer match anything, so that I can fix or remove them deliberately rather than wondering why they stopped applying.
+23. As a publisher, I want a clear explanation when a page cannot be loaded, so that I know whether the problem is the site, the network, or my input.
+24. As a publisher, I want the tool to speak in terms of agents and content rather than HTML and CSS, so that I can use it without being a developer.
+
+As the **agent** consuming the result — not a user of the editor, but the party the output is written for:
+
+25. As an agent, I want the page as clean text, so that I can read it without parsing layout markup.
+26. As an agent, I want hidden elements absent from what I receive, so that I am not misled by content the publisher considers irrelevant.
+27. As an agent, I want publisher context adjacent to the element it describes, so that I can associate the explanation with the right content.
+28. As an agent, I want linked content inlined, so that I can answer questions about it without making further requests.
+
+## 4. Scope
+
+### 4.1 In scope
 
 - Loading any server-rendered public webpage by URL.
 - Click-to-select any element in a visual preview.
@@ -51,17 +87,17 @@ The editor is the authoring surface for the modification set. The transform is t
 - Persisting and restoring a configuration per page.
 - Rendering the agent-facing representation in both Markdown and cleaned HTML.
 
-### 3.2 Explicitly out of scope
+### 4.2 Explicitly out of scope
 
 - **JavaScript-rendered pages.** The pipeline never executes scripts, so a client-rendered SPA
   yields an empty DOM with nothing to annotate. Server-side headless rendering is the upgrade
-  path, and is named in §9.
+  path, and is named in §11.
 - robots.txt enforcement.
 - Recursive link forwarding beyond depth 1.
 - Authentication, multi-user, multi-tenancy.
-- Serving the modified page to real agent traffic (see §9).
+- Serving the modified page to real agent traffic (see §11).
 
-## 4. Data model
+## 5. Data model
 
 One configuration document per **normalized URL**. Flat, order-independent, type-tagged.
 
@@ -89,7 +125,7 @@ versions.
 tracking parameters, sort remaining parameters, drop a trailing slash. Non-tracking parameters
 are preserved: `?product=123` is a different page.
 
-### 4.1 Element identity
+### 5.1 Element identity
 
 The hardest problem in the system. A modification points at "that element", and the pointer
 must survive re-fetching, DOM churn, injected nodes, and reordering.
@@ -114,20 +150,20 @@ Resolution is **graded**:
 `data-ax-id` is a positional in-session handle used only to wire preview to inspector. It is
 never persisted.
 
-## 5. Behaviour of each modification type
+## 6. Behaviour of each modification type
 
-### 5.1 Hide from agents
+### 6.1 Hide from agents
 The element and its **entire subtree** are removed from the agent payload. Not styled away —
 removed.
 
-### 5.2 Add context
+### 6.2 Add context
 Publisher-authored text is emitted as a **real text node adjacent to the element**: in HTML as
 `<span data-ax-context>`, in Markdown as an adjacent note. Rejected alternatives: a `data-*`
 attribute alone, an HTML comment, `aria-label` — agents that strip attributes or comments
 would lose it, defeating the purpose. The `data-ax-context` marker is layered on for
 provenance.
 
-### 5.3 Context-forward a link
+### 6.3 Context-forward a link
 At render time, the server validates the href, fetches it, extracts the main content, and
 inlines it. **Always as a block** appended after the nearest block-level ancestor, never inline
 — an anchor mid-sentence must not have thousands of words injected into the sentence. The
@@ -137,12 +173,12 @@ Bounded by: depth 1, ~5s timeout, ~1MB per fetch, ~20k characters total per rend
 hrefs, skipped self/cycle links, typed placeholders for non-HTML content, and a visible error
 node on failure rather than a silent drop.
 
-### 5.4 Interaction rules
+### 6.4 Interaction rules
 Hiding a parent **shadows** descendant modifications: they are retained in the configuration,
 not rendered, shown greyed as "hidden by parent", and restored when the parent is unhidden.
 `context` and `forwardLink` may coexist on one element.
 
-## 6. Interface
+## 7. Interface
 
 Two panels: preview and modifications editor.
 
@@ -159,7 +195,7 @@ Two panels: preview and modifications editor.
   legend.
 - Copy is written for publishers: "Hide from AI agents", never "set `display:none`".
 
-## 7. Architecture
+## 8. Architecture
 
 ```
 Browser (React + TS)                 Server (NestJS)
@@ -184,7 +220,7 @@ Domain logic — locator, transforms, fetcher, sanitizer — is written as plain
 framework decorators, so the framework stays confined to the HTTP edge and the logic
 unit-tests without a testing module.
 
-## 8. Security
+## 9. Security
 
 - **SSRF**: scheme allowlist; DNS resolution followed by blocks on private, loopback,
   link-local and cloud metadata ranges; every redirect hop re-checked; redirect count capped.
@@ -194,7 +230,53 @@ unit-tests without a testing module.
 - **Output escaping** of all publisher-supplied text.
 - **Budgets**: request timeouts, response size caps, per-render fetch limits.
 
-## 9. Known limitations and future work
+## 10. Testing decisions
+
+Development is test-first: write the failing test, confirm it fails for the right reason,
+implement the minimum that passes. That settles *when* tests are written. This section settles
+**where they attach**, which is the decision that determines whether the suite survives
+refactoring.
+
+### 10.1 The seam
+
+**One seam: `POST /api/render`** — URL plus modification set in, agent payload out.
+
+Almost every rule in this specification is observable there, so tests are written as statements
+about product behaviour rather than about internal structure:
+
+- a hidden element does not appear in the payload, and neither does its subtree
+- context appears as readable text adjacent to its element
+- a forwarded link's content appears as a block after the anchor's containing block
+- a modification beneath a hidden parent is shadowed, and returns when the parent is unhidden
+- an element whose path moved is re-anchored by fingerprint
+- an element that no longer exists is reported stale, and the modification is retained
+
+Each maps to an acceptance criterion in §12. None depends on how the resolver, emitter, or
+sanitizer is internally arranged, so reshaping any of them does not break a single test.
+
+The alternative — a test per class, following whatever is in front of you — produces a suite
+coupled to structure, where the first refactor turns dozens of tests red without any behaviour
+having changed. On a short clock those tests get deleted rather than repaired, which is worse
+than not having written them.
+
+### 10.2 Tested directly, and why
+
+- **SSRF guard** — security-critical, and its cases (redirect into a private range, IPv6
+  loopback, cloud metadata address) are awkward to provoke through the endpoint. Unit-tested
+  against an explicit table.
+- **URL normalization** — a pure function; a table of inputs to expected keys is the clearest
+  possible expression of it.
+
+### 10.3 Not tested, deliberately
+
+React components, and no end-to-end browser suite. The behaviour worth protecting lives in the
+transform, which is covered at the seam; the UI is thin over it. This is a scoping decision
+rather than an oversight, and stating it is part of the specification.
+
+Server tests run on Jest (the framework default, to avoid a tooling detour); web tests on
+vitest.
+
+## 11. Known limitations and future work
 
 | Limitation | Future direction |
 |---|---|
@@ -206,7 +288,7 @@ unit-tests without a testing module.
 | No page-level or domain-level rules | Rules applied by selector across a domain — publishers have thousands of pages, not one |
 | No agent-readability guidance | A linter scoring the page for agent legibility (ambiguous link text, unlabelled inputs, missing alt text, no heading hierarchy) with one-click fixes |
 
-## 10. Acceptance criteria
+## 12. Acceptance criteria
 
 1. `npm install && npm run dev` from a clean clone produces a working app — no Docker, no
    required environment variables.
