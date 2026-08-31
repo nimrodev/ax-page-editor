@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.log
+.env
+.env.local
+*.sqlite
+*.sqlite-journal
+.DS_Store
+.omc/
+
+# The company's assignment document — not ours to redistribute
+assignment.pdf
