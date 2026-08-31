@@ -10,3 +10,8 @@ dist/
 
 # The company's assignment document — not ours to redistribute
 assignment.pdf
+
+# Third-party skill packs installed via `npx skills` — not part of this project
+.agents/
+.claude/
+skills-lock.json
