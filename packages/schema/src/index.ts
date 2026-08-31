@@ -54,3 +54,19 @@ export const ConfigurationSchema = z.object({
   modifications: z.array(ModificationSchema),
 });
 export type Configuration = z.infer<typeof ConfigurationSchema>;
+
+/**
+ * Why a render attempt failed to produce an agent payload. Shared between
+ * server and client so the failure taxonomy can only drift in one place.
+ */
+export const RenderFailureReasonSchema = z.enum([
+  "blocked-for-security",
+  "blocked-by-site",
+  "timeout",
+  "unsupported-content-type",
+  "too-large",
+  "too-many-redirects",
+  "network",
+  "budget-exceeded",
+]);
+export type RenderFailureReason = z.infer<typeof RenderFailureReasonSchema>;

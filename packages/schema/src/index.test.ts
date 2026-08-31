@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ConfigurationSchema } from "./index";
+import { ConfigurationSchema, RenderFailureReasonSchema } from "./index";
 
 describe("ConfigurationSchema", () => {
   it("round-trips a configuration with all three modification types", () => {
@@ -76,5 +76,27 @@ describe("ConfigurationSchema", () => {
     };
 
     expect(() => ConfigurationSchema.parse(input)).toThrow();
+  });
+});
+
+describe("RenderFailureReasonSchema", () => {
+  it("accepts every known failure reason", () => {
+    const reasons = [
+      "blocked-for-security",
+      "blocked-by-site",
+      "timeout",
+      "unsupported-content-type",
+      "too-large",
+      "too-many-redirects",
+      "network",
+      "budget-exceeded",
+    ];
+    for (const reason of reasons) {
+      expect(RenderFailureReasonSchema.parse(reason)).toBe(reason);
+    }
+  });
+
+  it("rejects an unknown reason", () => {
+    expect(() => RenderFailureReasonSchema.parse("made-up-reason")).toThrow();
   });
 });
