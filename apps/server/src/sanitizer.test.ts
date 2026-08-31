@@ -73,3 +73,26 @@ describe("sanitizeDocument and <template>", () => {
     expect(serialized).not.toContain("onclick");
   });
 });
+
+describe("sanitizeDocument and <style>", () => {
+  it("removes style tags, including their content", () => {
+    const dom = new JSDOM(
+      "<head><style>.foo{color:red}/* megabytes of CSS-in-JS */</style></head><body><p>Real content</p></body>",
+    );
+    sanitizeDocument(dom.window.document);
+
+    const serialized = dom.serialize();
+    expect(serialized).not.toContain("<style");
+    expect(serialized).not.toContain("color:red");
+    expect(serialized).toContain("Real content");
+  });
+
+  it("removes style tags nested inside a <template>", () => {
+    const dom = new JSDOM(
+      '<body><template><style>.x{color:blue}</style></template></body>',
+    );
+    sanitizeDocument(dom.window.document);
+
+    expect(dom.serialize()).not.toContain("<style");
+  });
+});
