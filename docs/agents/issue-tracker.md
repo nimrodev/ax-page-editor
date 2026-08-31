@@ -21,8 +21,4 @@ as "closing" an issue should commit to `main` instead and move the Linear issue 
 Commit quality still matters, and more than usual: the history is part of what gets read.
 Atomic commits, each one a working state, with messages that say why rather than what.
 
-Linear issues carry a `gitBranchName`, which would auto-link a branch and its PR to the issue.
-It is unused here as a consequence of committing straight to `main`; issue state is moved
-manually.
-
 External pull requests are **not** a request surface for triage.
