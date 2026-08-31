@@ -413,25 +413,16 @@ The assignment says to decide, document, and move on. These are the calls, each 
 
 ## 13. Vocabulary
 
-Used consistently in code, UI copy, and the README.
+Domain language lives in [`CONTEXT.md`](CONTEXT.md) — the canonical glossary, with the synonyms
+to avoid. Decisions behind the design live in [`docs/adr/`](docs/adr/).
 
-- **AX (Agent Experience)** — how a page presents itself to AI agents, as distinct from to humans.
-- **Target page** — the third-party page being edited. Never modified at source; only its representation is. _Avoid_: source page, host page.
-- **Modification** — one declarative, type-tagged instruction attached to one **locator**, not to an element — which is why it can outlive the element. Three types: **hide**, **context note** (`context`), **link forwarding** (`forwardLink`).
-- **Configuration** — the full set of modifications for one normalized URL. The unit of save, load, and storage.
-- **Locator** — the composite pointer identifying an element across re-fetches: path + fingerprint + text hint.
-- **Fingerprint** — `sha1(tag + normalized text + href/src)`; content identity, used to re-anchor when the path breaks.
-- **ax-id (`data-ax-id`)** — positional, in-session-only handle wiring preview to inspector. Never persisted.
-- **Drift** — the path still resolves but the element's content has changed. Applied; for a context note, flagged needs-review.
-- **Re-anchor** — the path no longer resolves, but the fingerprint is found elsewhere; the modification moves to the new position.
-- **Needs review** — a context note applied to an element whose content changed underneath it. Internal editorial state, never present in the agent payload.
-- **Stale modification** — neither path nor fingerprint resolves; skipped at render, surfaced in the UI, kept in the config.
-- **Shadowed modification** — valid, but inside a hidden subtree; not rendered, not deleted.
-- **Agent payload** — the modified representation served to agents: Markdown blocks by default, cleaned HTML alongside. _Avoid_: agent output, agent-facing representation.
-- **Publisher** — the website owner or content manager using the editor. Not a developer. _Avoid_: user, admin.
-- **Human view / Agent view / Compare mode** — the three preview states.
-- **Provenance marker** — a `data-ax-*` attribute letting a consumer tell publisher annotation from original content.
-- **Seam** — where tests attach. There is one: `POST /api/render`.
+Listed here are the terms this document uses that are **not** domain language, and so are
+deliberately kept out of `CONTEXT.md`:
+
+- **ax-id (`data-ax-id`)** — an implementation detail: a positional, in-session handle wiring preview to inspector. Never persisted.
+- **Provenance marker** — the `data-ax-*` attributes on emitted output that let a consumer tell publisher annotation from original content.
+- **Human view / Agent view / Compare mode** — the three preview states of the editor.
+- **Seam** — where tests attach. There is one: the render endpoint.
 - **Cold open** — the first-load state showing Agent view: what an agent sees today.
 
 ## Appendix A — The assignment, and how it is covered
