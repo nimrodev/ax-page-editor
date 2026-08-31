@@ -1,6 +1,6 @@
 # AX Page Editor — Build Plan
 
-Due **Thu 2026-09-03**. Design settled through a full grill; every decision recorded in
+Design settled through a full grill; every decision recorded in
 [`docs/DECISIONS.md`](docs/DECISIONS.md) (18 ADRs). Vocabulary in
 [`docs/GLOSSARY.md`](docs/GLOSSARY.md). Design narrative in [`BRIEF.md`](BRIEF.md).
 
@@ -42,9 +42,13 @@ so it unit-tests without a testing module.
 
 ---
 
+Calendar dates live in the Linear milestones, not here. This document is about **order and
+dependencies** — what must be true before the next slice can start. The deadline is real, but
+the plan is to finish as early as possible, not to fill the time.
+
 ## Milestones
 
-### M0 · Foundation — Mon 2026-08-31
+### M0 · Foundation
 *Proof: `npm run dev` boots both apps; schema tests green; demo pages verified.*
 
 - Verify demo pages accept the honest UA — **done**: Wikipedia, BBC News, Stripe /pricing pass;
@@ -57,7 +61,7 @@ so it unit-tests without a testing module.
   class-validator, so the schema keeps one definition).
 - Vite + React + Tailwind, `/api` proxy; root `npm run dev` runs both.
 
-### M1 · See what an agent sees — Tue 2026-09-01
+### M1 · See what an agent sees
 *Proof: paste a URL, get the agent payload. No editing yet, and it is already interesting.*
 
 - SSRF guard: scheme allowlist, DNS-resolve, private/loopback/link-local/metadata blocks,
@@ -71,7 +75,7 @@ so it unit-tests without a testing module.
 - Typed failure states rendered in the pane: blocked by site, timed out, unsupported type,
   blocked for security. Publisher language, no status codes.
 
-### M2 · Hide one element, end to end — Tue 2026-09-01
+### M2 · Hide one element, end to end
 *Proof: click a nav block, hide it, watch it leave the agent payload. The core loop works.*
 
 - Locator builder: structural path + `sha1(tag + normalized text + href/src)` + text hint.
@@ -83,7 +87,7 @@ so it unit-tests without a testing module.
 - `hide` transform — subtree-inclusive.
 - Human / Agent view toggle.
 
-### M3 · All three modification types — Wed 2026-09-02
+### M3 · All three modification types
 *Proof: every mandatory requirement in the assignment is met.*
 
 - `context` transform: real parseable text node adjacent to the element, `data-ax-context` as
@@ -95,7 +99,7 @@ so it unit-tests without a testing module.
 - Conflict rules: children of hidden elements are **shadowed, not deleted**; `context` and
   `forwardLink` may coexist on one anchor.
 
-### M4 · Save and restore — Wed 2026-09-02
+### M4 · Save and restore
 *Proof: save, refresh, come back tomorrow — the work is still there.*
 
 - SQLite repository + config document keyed by normalized URL, original URL retained.
@@ -103,7 +107,7 @@ so it unit-tests without a testing module.
 - Modifications list: review, remove, with stale and shadowed states rendered distinctly.
 - Auto-apply saved config on load + toast reporting counts including stale.
 
-### M5 · Prove it — Wed 2026-09-02 · **cut candidates, dropped in reverse order**
+### M5 · Prove it — **cut candidates, dropped in reverse order**
 *Proof: a reviewer can see the modifications worked, not just that they were made.*
 
 1. Diff overlay in Human view, always on — dashed red outline hidden, blue badge context,
@@ -118,16 +122,16 @@ so it unit-tests without a testing module.
    remains.** Real tokenizer is a further upgrade beyond that; token counting is not in the
    assignment's requirements.
 
-**Hard feature freeze Wed 20:00.** Remaining Wednesday time goes to error and empty states.
+**Feature freeze once M5 is entered:** no new scope after this point — remaining time goes to error and empty states, not to more features.
 
-### M6 · Ship — Thu 2026-09-03
+### M6 · Ship
 *No coding.*
 
 - README: setup (`npm install && npm run dev`, nothing else), architecture overview,
   limitations, future work — JS-rendered pages via Playwright, robots.txt enforcement,
   Postgres JSONB as system of record with compiled configs at the edge.
-- `SPEC.md` — they said outright they are testing whether a spec can be written, then executed.
-- Screen recording, ~3 min, scripted Wednesday night and shot Thursday. Beats: cold open on
+- Reconcile `SPEC.md` with what actually shipped (the spec itself is written up front, before M0).
+- Screen recording, ~3 min, scripted while the app is fresh and shot the following morning. Beats: cold open on
   Agent view → select an element → hide it in Compare mode → add context → forward a link →
   A/B panel → save and restore, closing on one stated limitation. Rehearse once, record twice.
 
