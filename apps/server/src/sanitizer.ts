@@ -21,11 +21,6 @@ function isJavascriptUrl(value: string): boolean {
 function sanitizeRoot(root: ParentNode): void {
   root.querySelectorAll("script").forEach((el) => el.remove());
   root.querySelectorAll("iframe").forEach((el) => el.remove());
-  // <style> is not a security vector, but a page's inline CSS-in-JS output
-  // (styled-components and similar) can run to hundreds of KB of rules an
-  // agent has no use for — noise the "cleaned" in cleaned HTML promises to
-  // remove, same as an inline <script> would be.
-  root.querySelectorAll("style").forEach((el) => el.remove());
   root.querySelectorAll("form").forEach((el) => el.removeAttribute("action"));
 
   root.querySelectorAll("*").forEach((el) => {
@@ -47,13 +42,15 @@ function sanitizeRoot(root: ParentNode): void {
 
 /**
  * Strips the vectors that would let fetched third-party markup script
- * against the host application or exfiltrate through a live form — script
+ * against the host application or exfiltrate through a live form: script
  * tags, event-handler attributes, javascript: URLs, form actions, and
- * nested iframes — plus inline <style> blocks, which are pure noise for
- * an agent payload rather than a security concern. All of it, including
- * inside <template> content. Everything else — the page's own structure
- * and links — is left intact. Mutates in place, so a pipeline that
- * already holds a parsed document doesn't pay for a second parse.
+ * nested iframes — including inside <template> content. Security only:
+ * this is shared by both the agent payload and the human-view preview,
+ * so it deliberately leaves <style>, images, and the page's own structure
+ * intact — a human preview needs to look like the page. Noise-stripping
+ * for the agent payload specifically lives in agent-payload.ts instead.
+ * Mutates in place, so a pipeline that already holds a parsed document
+ * doesn't pay for a second parse.
  */
 export function sanitizeDocument(document: Document): void {
   sanitizeRoot(document);

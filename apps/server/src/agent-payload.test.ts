@@ -56,3 +56,23 @@ describe("buildAgentPayload", () => {
     expect(payload.html).toContain("Hello");
   });
 });
+
+describe("buildAgentPayload strips presentational noise", () => {
+  it("removes <style> blocks from the cleaned HTML output", () => {
+    const doc = prepare(
+      "<head><style>.foo{color:red}/* megabytes of CSS-in-JS */</style></head><body><p>Real content</p></body>",
+    );
+    const payload = buildAgentPayload(doc);
+
+    expect(payload.html).not.toContain("<style");
+    expect(payload.html).not.toContain("color:red");
+    expect(payload.html).toContain("Real content");
+  });
+
+  it("removes <style> blocks nested inside a <template>", () => {
+    const doc = prepare("<body><template><style>.x{color:blue}</style></template></body>");
+    const payload = buildAgentPayload(doc);
+
+    expect(payload.html).not.toContain("<style");
+  });
+});

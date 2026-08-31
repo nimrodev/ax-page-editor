@@ -4,12 +4,8 @@ import { FetchBudget } from "./fetch-budget";
 import { sanitizeDocument } from "./sanitizer";
 import { assignAxIds } from "./ax-id";
 import { buildAgentPayload, AgentPayload } from "./agent-payload";
+import { injectBaseHref } from "./base-href";
 
-/**
- * The transform at the heart of the product: a target URL becomes an agent
- * payload. Fetch, sanitize, assign element handles, emit. Nothing here
- * depends on NestJS, so it tests without a testing module (ADR-0006).
- */
 export interface FixtureLookup {
   get(url: string): string | undefined;
 }
@@ -19,18 +15,62 @@ export interface RenderOptions {
   useFixtures?: boolean;
 }
 
+interface PreparedPage {
+  document: Document;
+  finalUrl: string;
+}
+
+/**
+ * The shared first half of the pipeline: fetch (or read a fixture),
+ * sanitize for security, and assign element handles. Both the agent
+ * payload and the human-view preview build on exactly this, so a
+ * selection made against one always lines up with the other.
+ */
+async function preparePage(
+  url: string,
+  fetcher: PageFetcher,
+  budget: FetchBudget,
+  options: RenderOptions,
+): Promise<PreparedPage> {
+  const fromFixture = options.useFixtures ? options.fixtures?.get(url) : undefined;
+  const { html, finalUrl } =
+    fromFixture !== undefined ? { html: fromFixture, finalUrl: url } : await fetcher.fetch(url, budget);
+
+  const dom = new JSDOM(html);
+  sanitizeDocument(dom.window.document);
+  assignAxIds(dom.window.document);
+
+  return { document: dom.window.document, finalUrl };
+}
+
+/**
+ * The transform at the heart of the product: a target URL becomes an agent
+ * payload. Nothing here depends on NestJS, so it tests without a testing
+ * module (ADR-0006).
+ */
 export async function renderPage(
   url: string,
   fetcher: PageFetcher,
   budget: FetchBudget,
   options: RenderOptions = {},
 ): Promise<AgentPayload> {
-  const fromFixture = options.useFixtures ? options.fixtures?.get(url) : undefined;
-  const html = fromFixture ?? (await fetcher.fetch(url, budget)).html;
+  const { document } = await preparePage(url, fetcher, budget, options);
+  return buildAgentPayload(document);
+}
 
-  const dom = new JSDOM(html);
-  sanitizeDocument(dom.window.document);
-  assignAxIds(dom.window.document);
-
-  return buildAgentPayload(dom.window.document);
+/**
+ * Prepares the same fetched, sanitized, id-annotated page for the
+ * human-view preview instead: styling and structure kept intact, with a
+ * <base> injected so the page's own relative URLs resolve when rendered
+ * outside its original origin.
+ */
+export async function prepareHumanView(
+  url: string,
+  fetcher: PageFetcher,
+  budget: FetchBudget,
+  options: RenderOptions = {},
+): Promise<{ html: string }> {
+  const { document, finalUrl } = await preparePage(url, fetcher, budget, options);
+  injectBaseHref(document, finalUrl);
+  return { html: document.documentElement.outerHTML };
 }

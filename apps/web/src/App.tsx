@@ -1,31 +1,47 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useCallback, useState } from "react";
 import { AgentPayload, RenderFailure, renderPage } from "./api";
 import { failureMessage } from "./failure-messages";
+import { HumanPreview, Selection } from "./HumanPreview";
+import { Inspector } from "./Inspector";
 
 type LoadState =
   | { status: "idle" }
   | { status: "loading" }
   | { status: "error"; message: string }
-  | { status: "ready"; payload: AgentPayload };
+  | { status: "ready"; url: string; payload: AgentPayload };
 
 export default function App() {
   const [url, setUrl] = useState("");
   const [state, setState] = useState<LoadState>({ status: "idle" });
   const [format, setFormat] = useState<"markdown" | "html">("markdown");
+  const [view, setView] = useState<"agent" | "human">("agent");
+  const [humanViewRequested, setHumanViewRequested] = useState(false);
+  const [selection, setSelection] = useState<Selection | null>(null);
+
+  const handleSelect = useCallback((next: Selection) => setSelection(next), []);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!url.trim()) return;
 
+    const submittedUrl = url.trim();
     setState({ status: "loading" });
+    setView("agent");
+    setHumanViewRequested(false);
+    setSelection(null);
     try {
-      const payload = await renderPage(url.trim());
-      setState({ status: "ready", payload });
+      const payload = await renderPage(submittedUrl);
+      setState({ status: "ready", url: submittedUrl, payload });
     } catch (err) {
       const message =
         err instanceof RenderFailure ? failureMessage(err.reason) : failureMessage("unknown");
       setState({ status: "error", message });
     }
+  }
+
+  function selectView(next: "agent" | "human") {
+    setView(next);
+    if (next === "human") setHumanViewRequested(true);
   }
 
   return (
@@ -51,7 +67,7 @@ export default function App() {
         </form>
       </header>
 
-      <main className="mx-auto max-w-4xl px-6 py-8">
+      <main className="mx-auto max-w-5xl px-6 py-8">
         {state.status === "idle" && (
           <p className="text-slate-500">
             Enter a URL above to see what an AI agent reads from that page today.
@@ -68,9 +84,26 @@ export default function App() {
           <div>
             <div className="mb-3 flex items-center justify-between">
               <p className="text-sm text-slate-500">
-                This is what an AI agent sees today.
+                {view === "agent" ? "This is what an AI agent sees today." : "The page as it actually looks."}
               </p>
               <div className="flex gap-1 text-sm">
+                <button
+                  onClick={() => selectView("agent")}
+                  className={`rounded px-3 py-1 ${view === "agent" ? "bg-slate-800 text-white" : "text-slate-600"}`}
+                >
+                  Agent view
+                </button>
+                <button
+                  onClick={() => selectView("human")}
+                  className={`rounded px-3 py-1 ${view === "human" ? "bg-slate-800 text-white" : "text-slate-600"}`}
+                >
+                  Human view
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: view === "agent" ? "block" : "none" }}>
+              <div className="mb-2 flex justify-end gap-1 text-sm">
                 <button
                   onClick={() => setFormat("markdown")}
                   className={`rounded px-2 py-1 ${format === "markdown" ? "bg-slate-800 text-white" : "text-slate-600"}`}
@@ -84,20 +117,28 @@ export default function App() {
                   HTML
                 </button>
               </div>
+              {format === "markdown" ? (
+                <div className="space-y-4 rounded border border-slate-200 bg-white p-4">
+                  {state.payload.markdownBlocks.map((block) => (
+                    <p key={block.axId} className="whitespace-pre-wrap text-sm text-slate-700">
+                      {block.markdown}
+                    </p>
+                  ))}
+                </div>
+              ) : (
+                <pre className="overflow-auto rounded border border-slate-200 bg-white p-4 text-xs text-slate-700">
+                  {state.payload.html}
+                </pre>
+              )}
             </div>
 
-            {format === "markdown" ? (
-              <div className="space-y-4 rounded border border-slate-200 bg-white p-4">
-                {state.payload.markdownBlocks.map((block) => (
-                  <p key={block.axId} className="whitespace-pre-wrap text-sm text-slate-700">
-                    {block.markdown}
-                  </p>
-                ))}
+            {humanViewRequested && (
+              <div style={{ display: view === "human" ? "flex" : "none" }} className="gap-4">
+                <div className="flex-1">
+                  <HumanPreview url={state.url} onSelect={handleSelect} />
+                </div>
+                <Inspector selection={selection} />
               </div>
-            ) : (
-              <pre className="overflow-auto rounded border border-slate-200 bg-white p-4 text-xs text-slate-700">
-                {state.payload.html}
-              </pre>
             )}
           </div>
         )}

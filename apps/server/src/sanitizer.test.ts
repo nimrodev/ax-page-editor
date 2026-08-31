@@ -61,6 +61,15 @@ describe("sanitizeDocument", () => {
   });
 });
 
+describe("sanitizeDocument keeps presentation intact", () => {
+  it("does not remove <style> tags — a security sanitizer, not a noise filter", () => {
+    const dom = new JSDOM("<head><style>.foo{color:red}</style></head><body><p>hi</p></body>");
+    sanitizeDocument(dom.window.document);
+
+    expect(dom.window.document.querySelector("style")).not.toBeNull();
+  });
+});
+
 describe("sanitizeDocument and <template>", () => {
   it("sanitizes content nested inside a <template>, which querySelectorAll does not walk into", () => {
     const dom = new JSDOM(
@@ -74,25 +83,3 @@ describe("sanitizeDocument and <template>", () => {
   });
 });
 
-describe("sanitizeDocument and <style>", () => {
-  it("removes style tags, including their content", () => {
-    const dom = new JSDOM(
-      "<head><style>.foo{color:red}/* megabytes of CSS-in-JS */</style></head><body><p>Real content</p></body>",
-    );
-    sanitizeDocument(dom.window.document);
-
-    const serialized = dom.serialize();
-    expect(serialized).not.toContain("<style");
-    expect(serialized).not.toContain("color:red");
-    expect(serialized).toContain("Real content");
-  });
-
-  it("removes style tags nested inside a <template>", () => {
-    const dom = new JSDOM(
-      '<body><template><style>.x{color:blue}</style></template></body>',
-    );
-    sanitizeDocument(dom.window.document);
-
-    expect(dom.serialize()).not.toContain("<style");
-  });
-});

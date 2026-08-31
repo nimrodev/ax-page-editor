@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@jest/globals";
-import { renderPage } from "./render-page";
+import { renderPage, prepareHumanView } from "./render-page";
 import { PageFetcher } from "./fetcher";
 import { SsrfGuard } from "./ssrf-guard";
 import { FetchBudget } from "./fetch-budget";
@@ -99,5 +99,33 @@ describe("renderPage against the real committed fixtures", () => {
       expect(payload.markdownBlocks.length).toBeGreaterThan(0);
       expect(payload.html).not.toContain("<script");
     }
+  });
+});
+
+describe("prepareHumanView", () => {
+  it("keeps styling intact and injects a <base> pointing at the fetched URL", async () => {
+    const fetcher = fetcherReturning(
+      '<head><style>.x{color:red}</style></head><body><h1>Title</h1><a href="/about">About</a></body>',
+    );
+
+    const { html } = await prepareHumanView("https://example.com/page", fetcher, new FetchBudget());
+
+    expect(html).toContain("<style");
+    expect(html).toContain('href="https://example.com/page"');
+  });
+
+  it("assigns the same ax-ids a payload render would, so selection and the agent view can cross-reference", async () => {
+    const fetcher = fetcherReturning("<body><h1>Title</h1></body>");
+    const { html } = await prepareHumanView("https://example.com/", fetcher, new FetchBudget());
+
+    expect(html).toMatch(/data-ax-id="ax-\d+"/);
+  });
+
+  it("still runs security sanitization — no scripts or event handlers survive", async () => {
+    const fetcher = fetcherReturning('<body><script>alert(1)</script><p onclick="x()">hi</p></body>');
+    const { html } = await prepareHumanView("https://example.com/", fetcher, new FetchBudget());
+
+    expect(html).not.toContain("<script");
+    expect(html).not.toContain("onclick");
   });
 });

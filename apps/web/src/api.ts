@@ -10,6 +10,10 @@ export interface AgentPayload {
   html: string;
 }
 
+export interface HumanViewPayload {
+  html: string;
+}
+
 export type ClientRenderFailureReason = RenderFailureReason | "unknown";
 
 export class RenderFailure extends Error {
@@ -18,18 +22,26 @@ export class RenderFailure extends Error {
   }
 }
 
-export async function renderPage(url: string): Promise<AgentPayload> {
-  const res = await fetch("/api/render", {
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
-    const body = await res.json().catch(() => null);
-    const reason = (body?.reason ?? "unknown") as ClientRenderFailureReason;
+    const responseBody = await res.json().catch(() => null);
+    const reason = (responseBody?.reason ?? "unknown") as ClientRenderFailureReason;
     throw new RenderFailure(reason);
   }
 
   return res.json();
+}
+
+export function renderPage(url: string): Promise<AgentPayload> {
+  return post("/api/render", { url });
+}
+
+export function fetchHumanView(url: string): Promise<HumanViewPayload> {
+  return post("/api/page", { url });
 }
