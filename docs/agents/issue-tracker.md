@@ -11,11 +11,18 @@ Issues live in **Linear**, not in this repo's GitHub Issues.
 Creating an issue requires `team`; set `project` so it lands in the right place. Blocking
 relationships are native: `blockedBy` and `blocks` on `save_issue`, both append-only.
 
-Code and pull requests live on GitHub at `nimrodev/ax-page-editor`. The two systems are linked
-by **branch name**: every Linear issue exposes a `gitBranchName` (for example
-`nimrodinbox/nim-12-verify-demo-pages`). Branch with that exact name and Linear attaches the
-branch and its pull request to the issue and advances its state. Any skill that would otherwise
-open a pull request "closing" an issue should rely on this instead.
+Code lives on GitHub at `nimrodev/ax-page-editor`.
 
-External pull requests are **not** a request surface for triage. The `triage` skill is not in
-use on this repo, and no triage label vocabulary is configured.
+**Commit directly to `main`. Do not open branches or pull requests.** This is a solo repo on a
+short deadline; there is no reviewer waiting on a PR, so the branch-and-merge cycle costs time
+and buys nothing. Skills that would otherwise create a branch, open a pull request, or mark one
+as "closing" an issue should commit to `main` instead and move the Linear issue by hand.
+
+Commit quality still matters, and more than usual: the history is part of what gets read.
+Atomic commits, each one a working state, with messages that say why rather than what.
+
+Linear issues carry a `gitBranchName`, which would auto-link a branch and its PR to the issue.
+It is unused here as a consequence of committing straight to `main`; issue state is moved
+manually.
+
+External pull requests are **not** a request surface for triage.
