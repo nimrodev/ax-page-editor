@@ -201,3 +201,47 @@ describe("renderPage applies modifications through the seam, against real fixtur
     expect(twice.markdownBlocks).toEqual(once.markdownBlocks);
   });
 });
+
+describe("renderPage applies a context note through the seam, against a real fixture", () => {
+  it("adds publisher text adjacent to a real element, present in both payload formats", async () => {
+    const store = new FixtureStore();
+    const fetcher = new PageFetcher(new SsrfGuard({ resolveHost: async () => [] }), {
+      fetchImpl: (async () => {
+        throw new Error("fixture mode must not touch the network");
+      }) as unknown as typeof fetch,
+    });
+    const url = "https://en.wikipedia.org/wiki/Large_language_model";
+
+    const dom = new JSDOM(store.get(url)!);
+    const h1 = dom.window.document.querySelector("h1")!;
+    const locator = buildLocator(h1);
+
+    const result = await renderPage(url, fetcher, new FetchBudget(), {
+      fixtures: store,
+      useFixtures: true,
+      modifications: [
+        {
+          id: "m1",
+          type: "context",
+          target: locator,
+          value: { text: "This is the article's main title." },
+        },
+      ],
+    });
+
+    // Assert the note landed as its own block, not merely that the text
+    // appears somewhere in the combined output — a weaker check here
+    // previously passed even when the note was silently merged into the
+    // h1's own block with no separator between them (a real bug: see
+    // apply-modifications.test.ts's "targets the nearest block ancestor").
+    const titleBlock = result.markdownBlocks.find((b) => b.markdown.trim() === "Large language model");
+    const noteBlock = result.markdownBlocks.find((b) =>
+      b.markdown.includes("This is the article's main title"),
+    );
+    expect(titleBlock).toBeDefined();
+    expect(noteBlock).toBeDefined();
+    expect(noteBlock!.markdown.trim()).toBe("This is the article's main title.");
+    expect(result.html).toContain("This is the article's main title.");
+    expect(result.html).toContain("data-ax-context");
+  });
+});

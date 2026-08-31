@@ -12,13 +12,14 @@ type LoadState =
   | { status: "ready"; url: string; payload: AgentPayload };
 
 /**
- * A hide modification's id is derived from its target path rather than
- * generated fresh each time. That makes "hide the same element twice"
- * naturally an upsert — the second call replaces the first entry with the
- * same id — instead of needing a separate lookup-and-replace step.
+ * A modification's id is derived from its (type, target path) rather than
+ * generated fresh each time, so re-applying to the same element is
+ * naturally an upsert on the client too — matching the server's own
+ * dedupeModifications, which enforces the same rule at the render seam
+ * regardless of what a client sends.
  */
-function hideModificationId(path: string): string {
-  return `hide:${path}`;
+function modificationId(type: string, path: string): string {
+  return `${type}:${path}`;
 }
 
 export default function App() {
@@ -33,10 +34,18 @@ export default function App() {
   const handleSelect = useCallback((next: Selection) => setSelection(next), []);
 
   const handleHide = useCallback((target: Selection) => {
-    const id = hideModificationId(target.locator.path);
+    const id = modificationId("hide", target.locator.path);
     setModifications((prev) => [
       ...prev.filter((m) => m.id !== id),
       { id, type: "hide", target: target.locator },
+    ]);
+  }, []);
+
+  const handleSetContext = useCallback((target: Selection, text: string) => {
+    const id = modificationId("context", target.locator.path);
+    setModifications((prev) => [
+      ...prev.filter((m) => m.id !== id),
+      { id, type: "context", target: target.locator, value: { text } },
     ]);
   }, []);
 
@@ -204,6 +213,7 @@ export default function App() {
                   modifications={modifications}
                   onHide={handleHide}
                   onRemove={handleRemove}
+                  onSetContext={handleSetContext}
                 />
               </div>
             )}

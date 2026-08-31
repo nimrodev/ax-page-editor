@@ -53,16 +53,17 @@ describe("applyModifications", () => {
     expect(document.querySelector("p")!.textContent).toBe("Keep");
   });
 
-  it("does nothing for modification types not yet implemented (context, forwardLink)", () => {
-    const document = documentFrom("<body><p>Hello</p></body>");
-    const target = buildLocator(document.querySelector("p")!);
+  it("does nothing for forwardLink, not yet implemented", () => {
+    const document = documentFrom("<body><a href='/x'>link</a></body>");
+    const target = buildLocator(document.querySelector("a")!);
     const modifications: Modification[] = [
-      { id: "m1", type: "context", target, value: { text: "a note" } },
-      { id: "m2", type: "forwardLink", target, value: { href: "https://example.com/x" } },
+      { id: "m1", type: "forwardLink", target, value: { href: "https://example.com/x" } },
     ];
 
     expect(() => applyModifications(document, modifications)).not.toThrow();
-    expect(document.querySelector("p")).not.toBeNull();
+    expect(document.querySelector("a")).not.toBeNull();
+    expect(document.querySelector("[data-ax-context]")).toBeNull();
+    expect(document.querySelector("[data-ax-forwarded]")).toBeNull();
   });
 });
 
@@ -113,5 +114,161 @@ describe("dedupeModifications", () => {
     ];
 
     expect(dedupeModifications(modifications)).toHaveLength(2);
+  });
+});
+
+describe("applyModifications: context", () => {
+  it("inserts the context text as a real text node adjacent to the element", () => {
+    const document = documentFrom("<body><img data-ax-id='ax-1' src='/chart.png'></body>");
+    const target = buildLocator(document.querySelector("img")!);
+    const modifications: Modification[] = [
+      { id: "m1", type: "context", target, value: { text: "Shows quarterly revenue by region." } },
+    ];
+
+    applyModifications(document, modifications);
+
+    const note = document.querySelector("[data-ax-context]");
+    expect(note).not.toBeNull();
+    expect(note!.textContent).toBe("Shows quarterly revenue by region.");
+    // Adjacent to, not inside — must work for void elements like <img> too.
+    expect(document.querySelector("img")!.nextElementSibling).toBe(note);
+  });
+
+  it("carries a data-ax-id derived from its target's, so the agent payload's block emitter picks it up", () => {
+    // buildAgentPayload only emits a Markdown block for elements carrying
+    // data-ax-id — assigned once, before modifications run. A context note
+    // is inserted afterward, so without its own derived id it would render
+    // correctly in the HTML payload (outerHTML includes it regardless) but
+    // silently vanish from the Markdown payload.
+    const document = documentFrom("<body><p data-ax-id='ax-7'>Target</p></body>");
+    const target = buildLocator(document.querySelector("p")!);
+    const modifications: Modification[] = [
+      { id: "m1", type: "context", target, value: { text: "Explanation" } },
+    ];
+
+    applyModifications(document, modifications);
+
+    const note = document.querySelector("[data-ax-context]")!;
+    expect(note.getAttribute("data-ax-id")).toBe("ax-7-context");
+  });
+
+  it("does not carry the note as an attribute, comment, or aria-label", () => {
+    const document = documentFrom("<body><p>Some text</p></body>");
+    const target = buildLocator(document.querySelector("p")!);
+    const modifications: Modification[] = [
+      { id: "m1", type: "context", target, value: { text: "Explanation" } },
+    ];
+
+    applyModifications(document, modifications);
+
+    const html = document.body.innerHTML;
+    expect(html).not.toContain('aria-label="Explanation"');
+    expect(html).not.toContain("<!--Explanation-->");
+    // It must be real text content, not merely an attribute value.
+    const note = document.querySelector("[data-ax-context]")!;
+    expect(note.textContent?.trim()).toBe("Explanation");
+  });
+
+  it("escapes publisher-supplied text that looks like markup", () => {
+    const document = documentFrom("<body><p>Target</p></body>");
+    const target = buildLocator(document.querySelector("p")!);
+    const dangerous = "<script>alert(1)</script> & <b>bold</b>";
+    const modifications: Modification[] = [
+      { id: "m1", type: "context", target, value: { text: dangerous } },
+    ];
+
+    applyModifications(document, modifications);
+
+    expect(document.querySelector("[data-ax-context] script")).toBeNull();
+    expect(document.querySelector("[data-ax-context]")!.textContent).toBe(dangerous);
+  });
+
+  it("upserts rather than duplicating when the same target is annotated twice", () => {
+    const document = documentFrom("<body><p>Target</p></body>");
+    const target = buildLocator(document.querySelector("p")!);
+    const modifications: Modification[] = [
+      { id: "m1", type: "context", target, value: { text: "First draft" } },
+      { id: "m2", type: "context", target, value: { text: "Final version" } },
+    ];
+
+    applyModifications(document, modifications);
+
+    const notes = document.querySelectorAll("[data-ax-context]");
+    expect(notes).toHaveLength(1);
+    expect(notes[0].textContent).toBe("Final version");
+  });
+});
+
+describe("applyModifications: context targets the nearest block ancestor", () => {
+  it("does not merge into the enclosing block when the target is a deeply nested inline element", () => {
+    // Reproduces a real bug: clicking a page always selects the innermost
+    // element under the cursor. For a styled heading like
+    // <h1><span><span>Title</span></span></h1>, that's the inner span, not
+    // the h1 — inserting the note as ITS sibling nests it inside the h1,
+    // and buildAgentPayload's Turndown pass over the h1 then merges both
+    // texts into one block with no separator between them.
+    const document = documentFrom(
+      "<body><h1 data-ax-id='ax-1'><span lang='en'><span class='inner' data-ax-id='ax-2'>Large language model</span></span></h1></body>",
+    );
+    const innerSpan = document.querySelector(".inner")!;
+    const target = buildLocator(innerSpan);
+    const modifications: Modification[] = [
+      { id: "m1", type: "context", target, value: { text: "This is the main title." } },
+    ];
+
+    applyModifications(document, modifications);
+
+    const h1 = document.querySelector("h1")!;
+    expect(h1.textContent).toBe("Large language model");
+    expect(h1.nextElementSibling?.hasAttribute("data-ax-context")).toBe(true);
+    expect(h1.nextElementSibling?.textContent).toBe("This is the main title.");
+  });
+
+  it("does not merge into the enclosing paragraph when the target is a call-to-action embedded inline", () => {
+    // A <button> is real content, not inline text formatting, so the old
+    // rule stopped climbing there — but it can still sit as phrasing
+    // content inside a <p>, which is what agent-payload.ts groups into
+    // one Markdown block. Anchoring at the button nests the note inside
+    // that same paragraph, reproducing the merge this module exists to
+    // avoid, for exactly the "unlabelled call to action" case NIM-50
+    // names as a headline scenario.
+    const document = documentFrom(
+      "<body><p data-ax-id='ax-1'>Read more <button data-ax-id='ax-2'>Learn more</button></p></body>",
+    );
+    const button = document.querySelector("button")!;
+    const target = buildLocator(button);
+    const modifications: Modification[] = [
+      { id: "m1", type: "context", target, value: { text: "Opens the pricing page." } },
+    ];
+
+    applyModifications(document, modifications);
+
+    const p = document.querySelector("p")!;
+    expect(p.textContent).toBe("Read more Learn more");
+    expect(p.nextElementSibling?.hasAttribute("data-ax-context")).toBe(true);
+    expect(p.nextElementSibling?.textContent).toBe("Opens the pricing page.");
+  });
+
+  it("still assigns the note an id when the anchor falls back to document.body", () => {
+    // nearestBlockAncestor falls back to document.body when nothing
+    // block-level is found above a lone inline element — and body never
+    // carries a data-ax-id. Deriving the note's id from the anchor rather
+    // than the original target would silently drop it from the Markdown
+    // payload in exactly that case.
+    const document = documentFrom("<body><span data-ax-id='ax-1'>lone inline text</span></body>");
+    const span = document.querySelector("span")!;
+    const target = buildLocator(span);
+    const modifications: Modification[] = [
+      { id: "m1", type: "context", target, value: { text: "A note on this span." } },
+    ];
+
+    applyModifications(document, modifications);
+
+    const note = document.querySelector("[data-ax-context]")!;
+    expect(note.getAttribute("data-ax-id")).toBe("ax-1-context");
+    // The anchor here is document.body, which has no meaningful "next
+    // sibling" slot (its parent is <html>) — the note must land inside
+    // body, not escape into <html> as a sibling of <body>.
+    expect(note.parentElement).toBe(document.body);
   });
 });

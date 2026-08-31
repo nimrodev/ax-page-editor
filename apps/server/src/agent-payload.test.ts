@@ -76,3 +76,16 @@ describe("buildAgentPayload strips presentational noise", () => {
     expect(payload.html).not.toContain("<style");
   });
 });
+
+describe("buildAgentPayload captures context notes as their own block", () => {
+  it("includes a bare [data-ax-context] span as a Markdown block even though span isn't a block tag", () => {
+    const doc = prepare(
+      '<body><img src="/chart.png"><span data-ax-context>Shows quarterly revenue.</span></body>',
+    );
+    const payload = buildAgentPayload(doc);
+
+    expect(payload.markdownBlocks.some((b) => b.markdown.includes("Shows quarterly revenue"))).toBe(
+      true,
+    );
+  });
+});
