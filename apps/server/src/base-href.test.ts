@@ -28,4 +28,12 @@ describe("injectBaseHref", () => {
 
     expect(dom.window.document.querySelector("base")).not.toBeNull();
   });
+
+  it("actually resolves a relative URL, not just adds the tag", () => {
+    const dom = new JSDOM('<body><img src="/logo.png"></body>');
+    injectBaseHref(dom.window.document, "https://example.com/articles/one");
+
+    const img = dom.window.document.querySelector("img")!;
+    expect(img.src).toBe("https://example.com/logo.png");
+  });
 });

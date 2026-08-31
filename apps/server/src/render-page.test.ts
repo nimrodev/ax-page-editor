@@ -1,9 +1,11 @@
 import { describe, expect, it } from "@jest/globals";
+import { JSDOM } from "jsdom";
 import { renderPage, prepareHumanView } from "./render-page";
 import { PageFetcher } from "./fetcher";
 import { SsrfGuard } from "./ssrf-guard";
 import { FetchBudget } from "./fetch-budget";
 import { FixtureStore } from "./fixture-store";
+import { buildLocator } from "@ax/schema";
 
 function fetcherReturning(html: string): PageFetcher {
   const guard = new SsrfGuard({ resolveHost: async () => ["93.184.216.34"] });
@@ -114,7 +116,7 @@ describe("prepareHumanView", () => {
     expect(html).toContain('href="https://example.com/page"');
   });
 
-  it("assigns the same ax-ids a payload render would, so selection and the agent view can cross-reference", async () => {
+  it("assigns ax-ids using the same scheme a payload render would", async () => {
     const fetcher = fetcherReturning("<body><h1>Title</h1></body>");
     const { html } = await prepareHumanView("https://example.com/", fetcher, new FetchBudget());
 
@@ -127,5 +129,75 @@ describe("prepareHumanView", () => {
 
     expect(html).not.toContain("<script");
     expect(html).not.toContain("onclick");
+  });
+});
+
+describe("renderPage applies modifications through the seam, against real fixtures", () => {
+  it("removes navigation from the real Wikipedia fixture's agent payload once hidden", async () => {
+    const store = new FixtureStore();
+    const fetcher = new PageFetcher(new SsrfGuard({ resolveHost: async () => [] }), {
+      fetchImpl: (async () => {
+        throw new Error("fixture mode must not touch the network");
+      }) as unknown as typeof fetch,
+    });
+    const url = "https://en.wikipedia.org/wiki/Large_language_model";
+
+    // First render, unmodified: find an element whose text we can target.
+    const baseline = await renderPage(url, fetcher, new FetchBudget(), {
+      fixtures: store,
+      useFixtures: true,
+    });
+    const target = baseline.markdownBlocks.find((b) => b.markdown.includes("Main page"));
+    expect(target).toBeDefined();
+
+    // Build a real locator against the same fixture, as the client would.
+    const dom = new JSDOM(store.get(url)!);
+    const el = Array.from(dom.window.document.querySelectorAll("a")).find(
+      (a) => a.textContent?.trim() === "Main page",
+    )!;
+    const locator = buildLocator(el);
+
+    const modified = await renderPage(url, fetcher, new FetchBudget(), {
+      fixtures: store,
+      useFixtures: true,
+      modifications: [{ id: "m1", type: "hide", target: locator }],
+    });
+
+    const combined = modified.markdownBlocks.map((b) => b.markdown).join("\n");
+    expect(combined).not.toContain("Main page");
+    expect(modified.html).not.toContain(">Main page<");
+  });
+
+  it("applying the same hide via two different modification ids updates rather than duplicating", async () => {
+    const store = new FixtureStore();
+    const fetcher = new PageFetcher(new SsrfGuard({ resolveHost: async () => [] }), {
+      fetchImpl: (async () => {
+        throw new Error("fixture mode must not touch the network");
+      }) as unknown as typeof fetch,
+    });
+    const url = "https://www.bbc.com/news";
+
+    const dom = new JSDOM(store.get(url)!);
+    const el = dom.window.document.querySelector("nav") ?? dom.window.document.body.firstElementChild!;
+    const locator = buildLocator(el);
+
+    const once = await renderPage(url, fetcher, new FetchBudget(), {
+      fixtures: store,
+      useFixtures: true,
+      modifications: [{ id: "m1", type: "hide", target: locator }],
+    });
+    const twice = await renderPage(url, fetcher, new FetchBudget(), {
+      fixtures: store,
+      useFixtures: true,
+      // Two distinct ids targeting the same locator — this is the actual
+      // case "applying twice" describes (a second hide action on an
+      // element that is already hidden), not two copies of one id.
+      modifications: [
+        { id: "m1", type: "hide", target: locator },
+        { id: "m2", type: "hide", target: locator },
+      ],
+    });
+
+    expect(twice.markdownBlocks).toEqual(once.markdownBlocks);
   });
 });

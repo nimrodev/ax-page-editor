@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Locator } from "@ax/schema";
 import { fetchHumanView, RenderFailure } from "./api";
 import { failureMessage } from "./failure-messages";
 import { IFRAME_OVERLAY_SCRIPT } from "./iframe-overlay";
@@ -7,6 +8,7 @@ export interface Selection {
   axId: string;
   tag: string;
   text: string;
+  locator: Locator;
 }
 
 interface AxSelectMessage {
@@ -14,6 +16,7 @@ interface AxSelectMessage {
   axId: string;
   tag: string;
   text: string;
+  locator: Locator;
 }
 
 function isAxSelectMessage(data: unknown): data is AxSelectMessage {
@@ -63,7 +66,12 @@ export function HumanPreview({ url, onSelect }: HumanPreviewProps) {
     function handleMessage(event: MessageEvent) {
       if (event.source !== iframeRef.current?.contentWindow) return;
       if (isAxSelectMessage(event.data)) {
-        onSelect({ axId: event.data.axId, tag: event.data.tag, text: event.data.text });
+        onSelect({
+          axId: event.data.axId,
+          tag: event.data.tag,
+          text: event.data.text,
+          locator: event.data.locator,
+        });
       }
     }
     window.addEventListener("message", handleMessage);

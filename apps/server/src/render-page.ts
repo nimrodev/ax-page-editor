@@ -5,6 +5,8 @@ import { sanitizeDocument } from "./sanitizer";
 import { assignAxIds } from "./ax-id";
 import { buildAgentPayload, AgentPayload } from "./agent-payload";
 import { injectBaseHref } from "./base-href";
+import { applyModifications } from "./apply-modifications";
+import type { Modification } from "@ax/schema";
 
 export interface FixtureLookup {
   get(url: string): string | undefined;
@@ -13,6 +15,7 @@ export interface FixtureLookup {
 export interface RenderOptions {
   fixtures?: FixtureLookup;
   useFixtures?: boolean;
+  modifications?: Modification[];
 }
 
 interface PreparedPage {
@@ -23,8 +26,19 @@ interface PreparedPage {
 /**
  * The shared first half of the pipeline: fetch (or read a fixture),
  * sanitize for security, and assign element handles. Both the agent
- * payload and the human-view preview build on exactly this, so a
- * selection made against one always lines up with the other.
+ * payload and the human-view preview build on exactly this same
+ * deterministic assignment, so ax-ids are consistent BETWEEN THE TWO on a
+ * static fixture or an unchanged live page.
+ *
+ * Known limitation: renderPage and prepareHumanView each call this
+ * independently, meaning two separate HTTP fetches of the target URL. A
+ * page whose markup order shifts between those two fetches (rotating ads,
+ * A/B-tested layout, any live re-render) would get different ax-ids
+ * between the agent and human views for what is visually the same
+ * element. Cross-referencing selection between the two views (Compare
+ * mode, NIM-58) will need either a single shared fetch per load or a
+ * content-based match rather than this positional one — deferred rather
+ * than solved speculatively ahead of that ticket.
  */
 async function preparePage(
   url: string,
@@ -55,6 +69,7 @@ export async function renderPage(
   options: RenderOptions = {},
 ): Promise<AgentPayload> {
   const { document } = await preparePage(url, fetcher, budget, options);
+  applyModifications(document, options.modifications ?? []);
   return buildAgentPayload(document);
 }
 

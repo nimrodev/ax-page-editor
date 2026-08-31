@@ -1,4 +1,5 @@
-import { FormEvent, useCallback, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
+import { Modification } from "@ax/schema";
 import { AgentPayload, RenderFailure, renderPage } from "./api";
 import { failureMessage } from "./failure-messages";
 import { HumanPreview, Selection } from "./HumanPreview";
@@ -10,6 +11,16 @@ type LoadState =
   | { status: "error"; message: string }
   | { status: "ready"; url: string; payload: AgentPayload };
 
+/**
+ * A hide modification's id is derived from its target path rather than
+ * generated fresh each time. That makes "hide the same element twice"
+ * naturally an upsert — the second call replaces the first entry with the
+ * same id — instead of needing a separate lookup-and-replace step.
+ */
+function hideModificationId(path: string): string {
+  return `hide:${path}`;
+}
+
 export default function App() {
   const [url, setUrl] = useState("");
   const [state, setState] = useState<LoadState>({ status: "idle" });
@@ -17,8 +28,21 @@ export default function App() {
   const [view, setView] = useState<"agent" | "human">("agent");
   const [humanViewRequested, setHumanViewRequested] = useState(false);
   const [selection, setSelection] = useState<Selection | null>(null);
+  const [modifications, setModifications] = useState<Modification[]>([]);
 
   const handleSelect = useCallback((next: Selection) => setSelection(next), []);
+
+  const handleHide = useCallback((target: Selection) => {
+    const id = hideModificationId(target.locator.path);
+    setModifications((prev) => [
+      ...prev.filter((m) => m.id !== id),
+      { id, type: "hide", target: target.locator },
+    ]);
+  }, []);
+
+  const handleRemove = useCallback((id: string) => {
+    setModifications((prev) => prev.filter((m) => m.id !== id));
+  }, []);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -29,6 +53,7 @@ export default function App() {
     setView("agent");
     setHumanViewRequested(false);
     setSelection(null);
+    setModifications([]);
     try {
       const payload = await renderPage(submittedUrl);
       setState({ status: "ready", url: submittedUrl, payload });
@@ -38,6 +63,33 @@ export default function App() {
       setState({ status: "error", message });
     }
   }
+
+  // Re-renders the agent payload whenever the modification list changes,
+  // so hiding something in Human view is reflected in Agent view without
+  // a separate "apply" step. The render seam is stateless and re-fetches
+  // fresh each time (ADR-0001), so this is a normal render call, not a
+  // save.
+  const readyUrl = state.status === "ready" ? state.url : null;
+  useEffect(() => {
+    if (!readyUrl) return;
+    let cancelled = false;
+
+    renderPage(readyUrl, modifications)
+      .then((payload) => {
+        if (!cancelled) setState({ status: "ready", url: readyUrl, payload });
+      })
+      .catch(() => {
+        // A modification-triggered re-render failing (e.g. a transient
+        // network blip) leaves the last good payload on screen rather
+        // than replacing it with an error, so a flaky re-render can't
+        // blank out a page the user already successfully loaded.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readyUrl, modifications]);
 
   function selectView(next: "agent" | "human") {
     setView(next);
@@ -132,12 +184,27 @@ export default function App() {
               )}
             </div>
 
+            {/*
+              Once requested, HumanPreview stays mounted for the rest of
+              this page's session — switching views toggles CSS display,
+              never mount/unmount. The click highlight is applied as a live
+              DOM style inside the iframe, not tracked in React state, so
+              it only survives a view switch because the iframe's document
+              is never torn down. Conditionally rendering this on `view`
+              instead of `humanViewRequested` would silently break
+              "selection survives switching views".
+            */}
             {humanViewRequested && (
               <div style={{ display: view === "human" ? "flex" : "none" }} className="gap-4">
                 <div className="flex-1">
                   <HumanPreview url={state.url} onSelect={handleSelect} />
                 </div>
-                <Inspector selection={selection} />
+                <Inspector
+                  selection={selection}
+                  modifications={modifications}
+                  onHide={handleHide}
+                  onRemove={handleRemove}
+                />
               </div>
             )}
           </div>

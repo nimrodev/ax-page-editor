@@ -1,4 +1,4 @@
-import { RenderFailureReason } from "@ax/schema";
+import { RenderFailureReason, Modification } from "@ax/schema";
 
 export interface MarkdownBlock {
   axId: string;
@@ -38,8 +38,8 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return res.json();
 }
 
-export function renderPage(url: string): Promise<AgentPayload> {
-  return post("/api/render", { url });
+export function renderPage(url: string, modifications: Modification[] = []): Promise<AgentPayload> {
+  return post("/api/render", { url, modifications });
 }
 
 export function fetchHumanView(url: string): Promise<HumanViewPayload> {

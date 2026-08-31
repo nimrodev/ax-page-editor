@@ -11,8 +11,7 @@ import { FixtureStore } from "./fixture-store";
 
 const UrlRequestSchema = z.object({ url: z.string().url() });
 
-const RenderRequestSchema = z.object({
-  url: z.string().url(),
+const RenderRequestSchema = UrlRequestSchema.extend({
   // Accepted now so the seam does not need to change shape once hide,
   // context, and link forwarding land — unapplied until then.
   modifications: z.array(ModificationSchema).optional(),
@@ -28,26 +27,29 @@ export class PageController {
 
   @Post("page")
   async page(@Body(new ZodValidationPipe(UrlRequestSchema)) body: z.infer<typeof UrlRequestSchema>) {
-    try {
-      return await prepareHumanView(body.url, this.fetcher, new FetchBudget(), {
+    return this.runTranslatingFetchFailures(() =>
+      prepareHumanView(body.url, this.fetcher, new FetchBudget(), {
         fixtures: this.fixtures,
         useFixtures,
-      });
-    } catch (err) {
-      if (err instanceof FetchFailure) {
-        throw new HttpException({ reason: err.reason }, HttpStatus.UNPROCESSABLE_ENTITY);
-      }
-      throw err;
-    }
+      }),
+    );
   }
 
   @Post("render")
   async render(@Body(new ZodValidationPipe(RenderRequestSchema)) body: z.infer<typeof RenderRequestSchema>) {
-    try {
-      return await renderPage(body.url, this.fetcher, new FetchBudget(), {
+    return this.runTranslatingFetchFailures(() =>
+      renderPage(body.url, this.fetcher, new FetchBudget(), {
         fixtures: this.fixtures,
         useFixtures,
-      });
+        modifications: body.modifications,
+      }),
+    );
+  }
+
+  /** Runs the pipeline call and translates a FetchFailure into an HTTP response; not just error handling, the actual execution too. */
+  private async runTranslatingFetchFailures<T>(run: () => Promise<T>): Promise<T> {
+    try {
+      return await run();
     } catch (err) {
       if (err instanceof FetchFailure) {
         throw new HttpException({ reason: err.reason }, HttpStatus.UNPROCESSABLE_ENTITY);

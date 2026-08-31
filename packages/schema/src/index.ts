@@ -70,3 +70,5 @@ export const RenderFailureReasonSchema = z.enum([
   "budget-exceeded",
 ]);
 export type RenderFailureReason = z.infer<typeof RenderFailureReasonSchema>;
+
+export { buildLocator } from "./locator";
