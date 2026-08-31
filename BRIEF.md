@@ -69,13 +69,13 @@ written for:
 The editor is the visible surface; the deliverable is a **transform**:
 
 ```
-(source URL, modification set) -> agent-facing representation of the page
+(target URL, configuration) -> agent payload
 ```
 
 Two consequences drive everything:
 
 1. **Modifications are declarative data applied at render time** — never mutations of a stored
-   copy of the page. The source page changes underneath us, so the modification set must
+   copy of the page. The target page changes underneath us, so the configuration must
    degrade gracefully when it does.
 2. **Hiding must be true at the byte level**, which forces a server-side render path.
 
@@ -105,7 +105,7 @@ tracking parameters (`utm_*`, `fbclid`, `gclid`), sort the rest, drop a trailing
 original URL is retained for display. Non-tracking parameters are preserved: `?product=123` is
 a different page.
 
-### 3.1 Element identity — the hard problem, solved first
+### 4.1 Element identity — the hard problem, solved first
 
 A modification points at "that element", and the pointer must survive re-fetching, DOM churn,
 injected nodes, and reordering.
@@ -130,19 +130,58 @@ Resolution is **graded**:
 `data-ax-id` is a positional, in-session handle wiring preview to inspector. It is never
 persisted, because it is meaningless across re-fetches.
 
+**A modification is attached to a locator, not to an element.** That is why a stale
+modification is coherent: the element is gone, the modification is not.
+
+#### 4.1.1 Drift behaves differently per modification type
+
+Applying drift uniformly is unsafe. Hiding a `<nav>` whose links changed is still correct —
+the intent was structural. But a context note reading "Enterprise tier — contact sales",
+attached to a paragraph the publisher has since rewritten, now **actively misleads the agent**,
+which is worse than being absent.
+
+| Type | On drift |
+|---|---|
+| `hide` | Apply. The intent is structural and survives a content change. |
+| `forwardLink` | Apply, reading the anchor's **current** href — the publisher's intent was "follow this link", not "follow that URL". |
+| `context` | Apply, but raise a distinct **needs-review** state: the text was written about content that has since changed. Only the publisher can judge whether it still holds. |
+
+`needs-review` is deliberately *not* signalled in the agent payload. It is internal editorial
+state; leaking it would put our uncertainty in front of an agent.
+
+#### 4.1.2 A redesign is not eighteen drifts
+
+If a large share of locators fail on one re-fetch, the page was rebuilt, and reporting each
+failure separately is useless noise. Above a threshold (half the configuration), the UI reports
+it once at page level — *"This page has changed substantially. 18 of 25 modifications could not
+be placed."* — with the individual detail available underneath.
+
+#### 4.1.3 Ambiguous re-anchoring resolves to stale, never to a guess
+
+A publisher duplicates a section and one fingerprint now matches three elements. Prefer the
+candidate at the smallest path distance from the original; **if still tied, mark stale rather
+than choose**. A wrong guess silently hides or annotates the wrong content, which is the worst
+failure this system can produce — it is invisible to the publisher and misleading to the agent.
+
+#### 4.1.4 Stale modifications revive
+
+Because stale modifications are retained rather than deleted, an element that disappears in one
+edit and returns in a later one re-attaches on the next re-fetch. Nothing is lost to a
+temporary removal.
+
 ---
 
 ## 5. The three modification types
 
-### 4.1 Hide from agents
+### 5.1 Hide from agents
 Element and entire subtree removed from the agent payload. A hidden `<section>` whose children
 survived would be a plain bug.
 
-### 4.2 Add context
+### 5.2 Add context
 A real text node adjacent to the element, in both output formats, with `data-ax-context` as a
 provenance marker. Publisher-supplied text is escaped on output.
 
-### 4.3 Context-forward a link
+### 5.3 Context-forward a link
 Server-side at render time, not save time: SSRF-check the href, fetch with ~5s timeout and
 ~1MB cap, extract main content, strip nav and footer, truncate at a block boundary with the
 truncation marked. Cached by URL with a short TTL — twenty forwarded links must not mean twenty
@@ -153,7 +192,7 @@ duplicate hrefs deduped · ~20k characters total per render · non-HTML content 
 image) render a typed placeholder · a failed fetch renders a visible error node rather than
 disappearing silently.
 
-### 4.4 Interaction rules
+### 5.4 Interaction rules
 Hiding a parent **shadows** descendant modifications: retained in the config, not rendered,
 shown greyed as "hidden by parent", restored when the parent is unhidden. Silently deleting
 them would lose work the user cannot see they lost. `context` and `forwardLink` may coexist on
@@ -216,8 +255,10 @@ edge and the logic tests without a testing module.
   from a bug.
 - **Inspector** — tag, truncated text, resolved locator, per-element modifications, each
   removable.
-- **Modifications list** — global review and removal; where stale and shadowed modifications
-  surface.
+- **Modifications list** — global review and removal; where stale, shadowed, drifted and
+  needs-review modifications surface, each rendered distinctly. A context note whose element
+  changed underneath it is the one state that asks the publisher to do something, so it reads
+  loudest.
 - **Diff overlay**, always on in Human view — dashed red outline hidden, blue badge context,
   green badge forwarded, plus a legend. Without it a publisher who annotated twelve elements
   cannot see their own work on the page.
@@ -295,6 +336,11 @@ rules are asserted there, against fixture pages, as behaviour rather than struct
 - a modification under a hidden parent is shadowed, and returns when the parent is unhidden
 - an element whose path moved is re-anchored by fingerprint
 - an element that no longer exists is reported stale, and the modification is retained
+- a context note whose element's text changed is applied but flagged needs-review, while a
+  `hide` on a drifted element is applied silently
+- a fingerprint matching several candidates with no nearest match resolves to stale, never to
+  an arbitrary pick
+- a stale modification re-attaches when its element returns in a later fetch
 
 None of these depend on how the resolver, emitter, or sanitizer is arranged internally, so
 reshaping any of them breaks no tests. The alternative — a test per class — produces a suite
@@ -321,6 +367,7 @@ vitest on the web.
 | Selection is manual | Select-similar: apply a modification to every structurally matching element at once — the single-page form of the domain rules below |
 | Configurations are not served to real agent traffic | `GET /ax/render` with User-Agent content negotiation; `llms.txt` export |
 | Single-node SQLite, single user, no auth | Postgres JSONB as system of record; compiled configs at the edge for the agent read path |
+| Payloads are computed per request, so nothing can be served stale — but the edge-KV path above would materialise them | That path needs page-change invalidation: re-render on a source change signal, or a short TTL, accepting a stale window |
 | No agent-readability guidance | A linter scoring pages for agent legibility — ambiguous link text, unlabelled inputs, missing alt text, no heading hierarchy — with one-click fixes |
 
 ---
@@ -358,7 +405,7 @@ The assignment says to decide, document, and move on. These are the calls, each 
 6. Context appears in the agent payload as readable text.
 7. A forwarded link's destination content appears inline in the agent payload.
 8. Modifications can be reviewed and individually removed.
-9. A configuration survives save, reload, and re-fetch of a changed source page — drifted
+9. A configuration survives save, reload, and re-fetch of a changed target page — drifted
    modifications re-anchor, unresolvable ones surface as stale rather than vanishing.
 10. A failed page load renders a specific, human explanation inside the preview.
 
@@ -369,16 +416,19 @@ The assignment says to decide, document, and move on. These are the calls, each 
 Used consistently in code, UI copy, and the README.
 
 - **AX (Agent Experience)** — how a page presents itself to AI agents, as distinct from to humans.
-- **Target page** — the third-party page being edited. Never modified at source; only its representation is.
-- **Modification** — one declarative, type-tagged instruction (`hide` | `context` | `forwardLink`) attached to one element.
+- **Target page** — the third-party page being edited. Never modified at source; only its representation is. _Avoid_: source page, host page.
+- **Modification** — one declarative, type-tagged instruction attached to one **locator**, not to an element — which is why it can outlive the element. Three types: **hide**, **context note** (`context`), **link forwarding** (`forwardLink`).
 - **Configuration** — the full set of modifications for one normalized URL. The unit of save, load, and storage.
 - **Locator** — the composite pointer identifying an element across re-fetches: path + fingerprint + text hint.
 - **Fingerprint** — `sha1(tag + normalized text + href/src)`; content identity, used to re-anchor when the path breaks.
 - **ax-id (`data-ax-id`)** — positional, in-session-only handle wiring preview to inspector. Never persisted.
-- **Drift** — the path no longer resolves but the fingerprint matches elsewhere; the modification re-anchors.
+- **Drift** — the path still resolves but the element's content has changed. Applied; for a context note, flagged needs-review.
+- **Re-anchor** — the path no longer resolves, but the fingerprint is found elsewhere; the modification moves to the new position.
+- **Needs review** — a context note applied to an element whose content changed underneath it. Internal editorial state, never present in the agent payload.
 - **Stale modification** — neither path nor fingerprint resolves; skipped at render, surfaced in the UI, kept in the config.
 - **Shadowed modification** — valid, but inside a hidden subtree; not rendered, not deleted.
-- **Agent payload** — the modified representation served to agents: Markdown blocks by default, cleaned HTML alongside.
+- **Agent payload** — the modified representation served to agents: Markdown blocks by default, cleaned HTML alongside. _Avoid_: agent output, agent-facing representation.
+- **Publisher** — the website owner or content manager using the editor. Not a developer. _Avoid_: user, admin.
 - **Human view / Agent view / Compare mode** — the three preview states.
 - **Provenance marker** — a `data-ax-*` attribute letting a consumer tell publisher annotation from original content.
 - **Seam** — where tests attach. There is one: `POST /api/render`.
