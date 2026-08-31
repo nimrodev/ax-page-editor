@@ -4,6 +4,7 @@ import { AgentPayload, RenderFailure, renderPage } from "./api";
 import { failureMessage } from "./failure-messages";
 import { HumanPreview, Selection } from "./HumanPreview";
 import { Inspector } from "./Inspector";
+import { AgentPayloadView } from "./AgentPayloadView";
 
 type LoadState =
   | { status: "idle" }
@@ -188,19 +189,7 @@ export default function App() {
                   HTML
                 </button>
               </div>
-              {format === "markdown" ? (
-                <div className="space-y-4 rounded border border-slate-200 bg-white p-4">
-                  {state.payload.markdownBlocks.map((block) => (
-                    <p key={block.axId} className="whitespace-pre-wrap text-sm text-slate-700">
-                      {block.markdown}
-                    </p>
-                  ))}
-                </div>
-              ) : (
-                <pre className="overflow-auto rounded border border-slate-200 bg-white p-4 text-xs text-slate-700">
-                  {state.payload.html}
-                </pre>
-              )}
+              <AgentPayloadView payload={state.payload} format={format} />
             </div>
 
             {/*

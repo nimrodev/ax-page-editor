@@ -3,6 +3,11 @@ import TurndownService from "turndown";
 export interface MarkdownBlock {
   axId: string;
   markdown: string;
+  // Which modification type produced this block, if any (NIM-63) — drives
+  // the Agent view's visual marking. Derived from the block element's own
+  // marker attribute, not tracked separately, so it can never drift from
+  // what applyContext/applyForwardLink actually inserted.
+  source: "page" | "context" | "forwarded";
 }
 
 export interface AgentPayload {
@@ -56,7 +61,13 @@ export function buildAgentPayload(document: Document): AgentPayload {
     const axId = el.getAttribute("data-ax-id");
     if (!axId) continue;
 
-    markdownBlocks.push({ axId, markdown });
+    const source: MarkdownBlock["source"] = el.hasAttribute("data-ax-context")
+      ? "context"
+      : el.hasAttribute("data-ax-forward")
+        ? "forwarded"
+        : "page";
+
+    markdownBlocks.push({ axId, markdown, source });
   }
 
   return {

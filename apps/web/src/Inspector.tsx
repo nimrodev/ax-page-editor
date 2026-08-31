@@ -146,15 +146,19 @@ export function Inspector({
           {canForward && (
             <div className="border-t border-slate-100 pt-3">
               {forwardModification ? (
-                <div className="rounded border border-blue-200 bg-blue-50 p-2">
-                  <p className="text-blue-900">
+                // Indigo, not blue: forwarded content gets its own accent
+                // distinct from hide/context (both blue), matching the same
+                // two-color language the Agent view uses to mark blocks
+                // (NIM-63) rather than each surface inventing its own.
+                <div className="rounded border border-indigo-200 bg-indigo-50 p-2">
+                  <p className="text-indigo-900">
                     {isShadowed(modificationStatuses, forwardModification.id)
                       ? "Forwarding linked content (hidden by an ancestor, not currently applied)"
                       : "Forwarding linked content to agents"}
                   </p>
                   <button
                     onClick={() => onRemove(forwardModification.id)}
-                    className="mt-1 text-xs font-medium text-blue-700 underline"
+                    className="mt-1 text-xs font-medium text-indigo-700 underline"
                   >
                     Remove
                   </button>

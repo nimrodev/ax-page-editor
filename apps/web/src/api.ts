@@ -3,6 +3,7 @@ import { RenderFailureReason, Modification } from "@ax/schema";
 export interface MarkdownBlock {
   axId: string;
   markdown: string;
+  source: "page" | "context" | "forwarded";
 }
 
 export interface ModificationStatus {

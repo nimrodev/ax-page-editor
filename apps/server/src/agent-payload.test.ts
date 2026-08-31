@@ -20,6 +20,7 @@ describe("buildAgentPayload", () => {
     expect(payload.markdownBlocks[2].markdown).toContain("Second paragraph");
     for (const block of payload.markdownBlocks) {
       expect(block.axId).toMatch(/^ax-\d+$/);
+      expect(block.source).toBe("page");
     }
   });
 
@@ -87,5 +88,27 @@ describe("buildAgentPayload captures context notes as their own block", () => {
     expect(payload.markdownBlocks.some((b) => b.markdown.includes("Shows quarterly revenue"))).toBe(
       true,
     );
+  });
+});
+
+describe("buildAgentPayload tags each block's source (NIM-63)", () => {
+  it("tags a context note block as 'context' and an ordinary block as 'page'", () => {
+    const doc = prepare(
+      '<body><p>Ordinary text</p><span data-ax-context>Shows quarterly revenue.</span></body>',
+    );
+    const payload = buildAgentPayload(doc);
+
+    const ordinary = payload.markdownBlocks.find((b) => b.markdown.includes("Ordinary text"))!;
+    const note = payload.markdownBlocks.find((b) => b.markdown.includes("Shows quarterly revenue"))!;
+    expect(ordinary.source).toBe("page");
+    expect(note.source).toBe("context");
+  });
+
+  it("tags a forwarded-content block as 'forwarded'", () => {
+    const doc = prepare('<body><div data-ax-forward>From: https://example.com/x</div></body>');
+    const payload = buildAgentPayload(doc);
+
+    const forwarded = payload.markdownBlocks.find((b) => b.markdown.includes("example.com"))!;
+    expect(forwarded.source).toBe("forwarded");
   });
 });
