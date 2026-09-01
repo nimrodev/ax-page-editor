@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Modification } from "@ax/schema";
-import { buildMarkPayload } from "./HumanPreview";
+import { buildMarkPayload, isRevealHiddenMessage } from "./HumanPreview";
 
 function locator(textHint: string) {
   return { path: "p", fingerprint: "x", textHint };
@@ -79,5 +79,29 @@ describe("buildMarkPayload", () => {
 
     expect(entries[0].sharedElement).toBe(false);
     expect(entries[1].sharedElement).toBe(false);
+  });
+});
+
+// Reproduces the NIM-66 follow-up: locating a real, resolvable element
+// that happens to be invisible (inside Wikipedia's collapsed nav drawer,
+// say) makes scrollIntoView and the outline a silent no-op — the
+// Inspector still updates via ax:select, but nothing changes on screen
+// and the publisher has no way to tell "it worked but you can't see it"
+// apart from "it's broken". The overlay posts this distinct message type
+// only in that case; this guard is how the parent recognizes it.
+describe("isRevealHiddenMessage", () => {
+  it("recognizes the ax:reveal-hidden message type", () => {
+    expect(isRevealHiddenMessage({ type: "ax:reveal-hidden" })).toBe(true);
+  });
+
+  it("rejects other message types", () => {
+    expect(isRevealHiddenMessage({ type: "ax:select" })).toBe(false);
+    expect(isRevealHiddenMessage({ type: "ax:reveal-failed" })).toBe(false);
+  });
+
+  it("rejects null and non-object data without throwing", () => {
+    expect(isRevealHiddenMessage(null)).toBe(false);
+    expect(isRevealHiddenMessage(undefined)).toBe(false);
+    expect(isRevealHiddenMessage("ax:reveal-hidden")).toBe(false);
   });
 });

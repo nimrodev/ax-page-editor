@@ -196,12 +196,33 @@ export const IFRAME_OVERLAY_SCRIPT = `
     });
   }
 
+  // Wikipedia's own collapsed-sidebar links (e.g. its Vector 2022 skin's
+  // hamburger drawer) turn out not to use display:none — they set
+  // visibility:hidden directly on the link, which still produces a
+  // non-empty getClientRects(). Checking only getClientRects() missed
+  // exactly the real-world case this exists for, so both signals are
+  // checked: an ancestor with display:none (empty rects) and the
+  // element's own visibility:hidden/collapse.
+  function isRenderedVisible(el) {
+    if (el.getClientRects().length === 0) return false;
+    var style = window.getComputedStyle(el);
+    if (style.visibility === "hidden" || style.visibility === "collapse") return false;
+    return true;
+  }
+
   function revealElement(el) {
     if (selected) clearHighlight(selected);
     setHighlight(el);
     selected = el;
     el.scrollIntoView({ behavior: "smooth", block: "center" });
     postSelect(el);
+    // scrollIntoView and the outline above both silently no-op on an
+    // element that resolves correctly but isn't actually rendered on
+    // screen — the parent needs an explicit signal to tell "resolved but
+    // invisible" apart from "nothing happened".
+    if (!isRenderedVisible(el)) {
+      window.parent.postMessage({ type: "ax:reveal-hidden" }, "*");
+    }
   }
 
   // Lets the parent ask this frame to scroll to and highlight a

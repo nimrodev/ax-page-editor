@@ -25,6 +25,16 @@ function isAxSelectMessage(data: unknown): data is AxSelectMessage {
   return typeof data === "object" && data !== null && (data as { type?: unknown }).type === "ax:select";
 }
 
+// Sent by the overlay only when a locate/reveal resolved to a real
+// element that isn't actually rendered on screen — an element inside a
+// collapsed nav drawer or a hidden tab, say. scrollIntoView and the
+// outline both silently no-op on such an element, so without this the
+// publisher sees no difference between "resolved but invisible" and
+// "didn't work at all".
+export function isRevealHiddenMessage(data: unknown): boolean {
+  return typeof data === "object" && data !== null && (data as { type?: unknown }).type === "ax:reveal-hidden";
+}
+
 interface HumanPreviewProps {
   url: string;
   onSelect: (selection: Selection) => void;
@@ -91,6 +101,10 @@ export function buildMarkPayload(modifications: Modification[]): MarkPayloadEntr
  */
 export function HumanPreview({ url, onSelect, revealRequest, locateRequest, modifications }: HumanPreviewProps) {
   const [state, setState] = useState<PreviewState>({ status: "loading" });
+  // Set on ax:reveal-hidden, cleared the moment any new selection lands —
+  // a stale "you can't see this" banner outliving the element it was
+  // about would be actively misleading once the publisher has moved on.
+  const [revealedButHidden, setRevealedButHidden] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   // A ref, not just the prop, because the overlay's "ready" ping arrives
   // on its own schedule (whenever the srcdoc's script finishes setting
@@ -131,6 +145,7 @@ export function HumanPreview({ url, onSelect, revealRequest, locateRequest, modi
   useEffect(() => {
     let cancelled = false;
     setState({ status: "loading" });
+    setRevealedButHidden(false);
 
     fetchHumanView(url)
       .then(({ html }) => {
@@ -151,6 +166,7 @@ export function HumanPreview({ url, onSelect, revealRequest, locateRequest, modi
     function handleMessage(event: MessageEvent) {
       if (event.source !== iframeRef.current?.contentWindow) return;
       if (isAxSelectMessage(event.data)) {
+        setRevealedButHidden(false);
         onSelect({
           axId: event.data.axId,
           tag: event.data.tag,
@@ -158,6 +174,9 @@ export function HumanPreview({ url, onSelect, revealRequest, locateRequest, modi
           href: event.data.href,
           locator: event.data.locator,
         });
+      }
+      if (isRevealHiddenMessage(event.data)) {
+        setRevealedButHidden(true);
       }
       // The srcdoc's script sets up its listeners on its own schedule —
       // this ping is how it tells the parent it's actually ready to
@@ -210,12 +229,20 @@ export function HumanPreview({ url, onSelect, revealRequest, locateRequest, modi
   }
 
   return (
-    <iframe
-      ref={iframeRef}
-      title="Page preview"
-      sandbox="allow-scripts"
-      srcDoc={state.html + IFRAME_OVERLAY_SCRIPT}
-      className="h-[70vh] w-full rounded border border-slate-200 bg-white"
-    />
+    <div>
+      {revealedButHidden && (
+        <div className="mb-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          Found it, but it's not currently visible on the page — it may be inside a collapsed menu, tab, or other
+          hidden section. Check the Inspector for its details.
+        </div>
+      )}
+      <iframe
+        ref={iframeRef}
+        title="Page preview"
+        sandbox="allow-scripts"
+        srcDoc={state.html + IFRAME_OVERLAY_SCRIPT}
+        className="h-[70vh] w-full rounded border border-slate-200 bg-white"
+      />
+    </div>
   );
 }
