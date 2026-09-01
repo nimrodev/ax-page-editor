@@ -189,7 +189,7 @@ export default function App() {
                   HTML
                 </button>
               </div>
-              <AgentPayloadView payload={state.payload} format={format} />
+              <AgentPayloadView payload={state.payload} format={format} modifications={modifications} view={view} />
             </div>
 
             {/*

@@ -112,3 +112,22 @@ describe("buildAgentPayload tags each block's source (NIM-63)", () => {
     expect(forwarded.source).toBe("forwarded");
   });
 });
+
+describe("buildAgentPayload surfaces the producing modification's id (NIM-64)", () => {
+  it("carries modificationId on a block tagged with data-ax-mod-id", () => {
+    const doc = prepare(
+      '<body><span data-ax-context data-ax-mod-id="mod-42">Shows quarterly revenue.</span></body>',
+    );
+    const payload = buildAgentPayload(doc);
+
+    const note = payload.markdownBlocks.find((b) => b.markdown.includes("Shows quarterly revenue"))!;
+    expect(note.modificationId).toBe("mod-42");
+  });
+
+  it("omits modificationId for an ordinary page block, which was never tagged", () => {
+    const doc = prepare("<body><p>Ordinary text</p></body>");
+    const payload = buildAgentPayload(doc);
+
+    expect(payload.markdownBlocks[0].modificationId).toBeUndefined();
+  });
+});

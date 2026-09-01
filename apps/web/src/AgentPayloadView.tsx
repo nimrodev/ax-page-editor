@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Modification } from "@ax/schema";
 import { AgentPayload, MarkdownBlock } from "./api";
 import { MarkerKind, splitHtmlByMarkers, wrapIndex } from "./agent-view-marks";
+import { buildNavigatorEntries, ModificationNavigator, NavigatorEntry } from "./ModificationNavigator";
 
 interface AgentPayloadViewProps {
   payload: AgentPayload;
   format: "markdown" | "html";
+  modifications: Modification[];
+  view: "agent" | "human";
 }
 
 interface SourceStyle {
@@ -51,28 +55,81 @@ function flashElement(el: HTMLElement, color: string): void {
  * data — one dataset (the non-"page" blocks) drives both, so marking and
  * navigation can never disagree about what counts as a change.
  */
-export function AgentPayloadView({ payload, format }: AgentPayloadViewProps) {
+const SCROLL_TOP_THRESHOLD = 400;
+
+export function AgentPayloadView({ payload, format, modifications, view }: AgentPayloadViewProps) {
   const changedBlocks = useMemo(
     () => payload.markdownBlocks.filter((b) => b.source !== "page"),
     [payload.markdownBlocks],
   );
+  const entries = useMemo(() => buildNavigatorEntries(modifications, payload), [modifications, payload]);
   const [index, setIndex] = useState(0);
+  const [expanded, setExpanded] = useState(false);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [showScrollTop, setShowScrollTop] = useState(false);
   const marksRef = useRef(new Map<string, HTMLElement>());
+
+  // The payload can run to hundreds of blocks with nothing but the window
+  // itself to scroll — this button only earns its place once you've
+  // actually scrolled far enough that getting back to the top by hand
+  // would be a chore.
+  useEffect(() => {
+    function handleScroll() {
+      setShowScrollTop(window.scrollY > SCROLL_TOP_THRESHOLD);
+    }
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   // A fresh render can have a different (or empty) set of changed blocks —
   // don't carry a stale index over from the previous payload.
   useEffect(() => {
     setIndex(0);
+    setActiveId(null);
   }, [payload]);
 
   const safeIndex = wrapIndex(index, changedBlocks.length);
+  const [suggestResume, setSuggestResume] = useState(false);
+
+  // Markdown/HTML tabs render entirely separate DOM trees, and switching
+  // between Human and Agent view leaves this component mounted but hides
+  // it — either way, whichever change was in focus (even just "change 1"
+  // by default, before any manual jump) is no longer the thing on screen.
+  // Rather than re-scrolling for you unasked — a jump you didn't request,
+  // in whatever direction you'd just scrolled the page yourself — this
+  // only raises a "resume" offer on the pill; jumpTo still does the actual
+  // scrolling, but only in response to a deliberate click. Both effects
+  // skip their very first run: there's nothing to "return to" yet.
+  const isFirstFormatRender = useRef(true);
+  useEffect(() => {
+    if (isFirstFormatRender.current) {
+      isFirstFormatRender.current = false;
+      return;
+    }
+    if (changedBlocks.length > 0) setSuggestResume(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [format]);
+
+  const isFirstViewRender = useRef(true);
+  useEffect(() => {
+    if (isFirstViewRender.current) {
+      isFirstViewRender.current = false;
+      return;
+    }
+    if (view === "agent" && changedBlocks.length > 0) setSuggestResume(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
 
   function jumpTo(rawIndex: number): void {
     if (changedBlocks.length === 0) return;
     const next = wrapIndex(rawIndex, changedBlocks.length);
     setIndex(next);
+    setSuggestResume(false);
 
     const block = changedBlocks[next];
+    const entry = entries.find((e) => e.axId === block.axId);
+    if (entry) setActiveId(entry.modificationId);
+
     const el = marksRef.current.get(block.axId);
     if (!el) return;
     // inline: "center" matters specifically for the HTML tab — its <pre>
@@ -80,6 +137,22 @@ export function AgentPayloadView({ payload, format }: AgentPayloadViewProps) {
     // a mark sitting right at the edge of the viewport instead of visible.
     el.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
     flashElement(el, SOURCE_STYLES[block.source].flashColor);
+  }
+
+  // A navigator row for a hide, or for a shadowed/unresolved modification,
+  // has no axId — there's no block in this render's payload to scroll to.
+  // Its own persistent "active" highlight in the list is the only feedback
+  // a click on one of those can give.
+  function selectEntry(entry: NavigatorEntry): void {
+    setActiveId(entry.modificationId);
+    setSuggestResume(false);
+    if (!entry.axId) return;
+    const idx = changedBlocks.findIndex((b) => b.axId === entry.axId);
+    if (idx >= 0) jumpTo(idx);
+  }
+
+  function resumeToActive(): void {
+    jumpTo(safeIndex);
   }
 
   const htmlSegments = useMemo(
@@ -137,27 +210,37 @@ export function AgentPayloadView({ payload, format }: AgentPayloadViewProps) {
         </pre>
       )}
 
-      {changedBlocks.length > 0 && (
-        <div className="fixed bottom-6 right-6 flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm shadow-lg">
+      {/* Stacked in one flex column, not two independently-positioned
+          elements — the navigator's own height varies (a short collapsed
+          pill vs. an expanded list up to 50vh), and a fixed offset for the
+          Top button would either overlap a tall panel or leave a gap above
+          a short one. Flowing them through normal layout means the Top
+          button always sits flush against whatever height the navigator
+          actually renders at. */}
+      <div className="fixed bottom-6 right-6 flex flex-col items-end gap-2">
+        {showScrollTop && (
           <button
-            onClick={() => jumpTo(safeIndex - 1)}
-            aria-label="Previous change"
-            className="rounded px-1.5 text-slate-600 hover:bg-slate-100"
+            onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+            aria-label="Scroll to top"
+            className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 shadow-lg hover:bg-slate-50"
           >
-            ‹
+            ↑ Top
           </button>
-          <span className="tabular-nums text-slate-600">
-            {safeIndex + 1} of {changedBlocks.length} {changedBlocks.length === 1 ? "change" : "changes"}
-          </span>
-          <button
-            onClick={() => jumpTo(safeIndex + 1)}
-            aria-label="Next change"
-            className="rounded px-1.5 text-slate-600 hover:bg-slate-100"
-          >
-            ›
-          </button>
-        </div>
-      )}
+        )}
+
+        <ModificationNavigator
+          entries={entries}
+          expanded={expanded}
+          onToggleExpanded={setExpanded}
+          activeId={activeId}
+          onSelect={selectEntry}
+          jumpIndex={safeIndex}
+          jumpCount={changedBlocks.length}
+          onJumpDelta={(delta) => jumpTo(safeIndex + delta)}
+          suggestResume={suggestResume}
+          onResume={resumeToActive}
+        />
+      </div>
     </div>
   );
 }

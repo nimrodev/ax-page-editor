@@ -8,6 +8,11 @@ export interface MarkdownBlock {
   // marker attribute, not tracked separately, so it can never drift from
   // what applyContext/applyForwardLink actually inserted.
   source: "page" | "context" | "forwarded";
+  // The modification that produced this block, when one did (NIM-64) —
+  // lets the modification navigator join a client-side Modification back
+  // to the specific block it rendered as. Independent of axId, which is
+  // derived from the *target* element's id, not the modification's own.
+  modificationId?: string;
 }
 
 export interface AgentPayload {
@@ -67,7 +72,8 @@ export function buildAgentPayload(document: Document): AgentPayload {
         ? "forwarded"
         : "page";
 
-    markdownBlocks.push({ axId, markdown, source });
+    const modificationId = el.getAttribute("data-ax-mod-id");
+    markdownBlocks.push({ axId, markdown, source, ...(modificationId ? { modificationId } : {}) });
   }
 
   return {

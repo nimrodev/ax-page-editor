@@ -46,7 +46,7 @@ describe("applyForwardLink", () => {
     const document = documentFrom("<body><p data-ax-id='ax-1'>See <a data-ax-id='ax-2'>more</a>.</p></body>");
     const anchor = document.querySelector("a")!;
 
-    await applyForwardLink(document, anchor, { href: "https://example.com/more" }, contextFor("https://example.com/", fetcher));
+    await applyForwardLink(document, anchor, { href: "https://example.com/more" }, contextFor("https://example.com/", fetcher), "mod-1");
 
     const p = document.querySelector("p")!;
     expect(p.textContent).toBe("See more.");
@@ -70,6 +70,7 @@ describe("applyForwardLink", () => {
       anchor,
       { href: "https://example.com/page#section" },
       contextFor("https://example.com/page", fetcher),
+      "mod-1",
     );
 
     expect(fetchImpl).not.toHaveBeenCalled();
@@ -87,6 +88,7 @@ describe("applyForwardLink", () => {
       anchor,
       { href: "https://example.com/page" },
       contextFor("https://example.com/page/", fetcher),
+      "mod-1",
     );
 
     expect(fetchImpl).not.toHaveBeenCalled();
@@ -106,6 +108,7 @@ describe("applyForwardLink", () => {
       anchor,
       { href: "https://example.com/broken" },
       contextFor("https://example.com/", fetcher),
+      "mod-1",
     );
 
     const forward = document.querySelector("[data-ax-forward]")!;
@@ -126,6 +129,7 @@ describe("applyForwardLink", () => {
       anchor,
       { href: "https://example.com/file.pdf" },
       contextFor("https://example.com/", fetcher),
+      "mod-1",
     );
 
     const forward = document.querySelector("[data-ax-forward]")!;
@@ -143,8 +147,8 @@ describe("applyForwardLink", () => {
     const cache = new ForwardLinkCache();
     const ctx = contextFor("https://example.com/", fetcher, { cache });
 
-    await applyForwardLink(document, anchorOne, { href: "https://example.com/shared" }, ctx);
-    await applyForwardLink(document, anchorTwo, { href: "https://example.com/shared" }, ctx);
+    await applyForwardLink(document, anchorOne, { href: "https://example.com/shared" }, ctx, "mod-1");
+    await applyForwardLink(document, anchorTwo, { href: "https://example.com/shared" }, ctx, "mod-1");
 
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     const forwards = document.querySelectorAll("[data-ax-forward-kind='content']");
@@ -159,7 +163,7 @@ describe("applyForwardLink", () => {
     const anchor = document.querySelector("a")!;
     const ctx = contextFor("https://example.com/", fetcher, { charBudget: new ForwardCharBudget(10) });
 
-    await applyForwardLink(document, anchor, { href: "https://example.com/long" }, ctx);
+    await applyForwardLink(document, anchor, { href: "https://example.com/long" }, ctx, "mod-1");
 
     const forward = document.querySelector("[data-ax-forward]")!;
     expect(forward.textContent).toContain("(truncated)");
@@ -177,7 +181,7 @@ describe("applyForwardLink", () => {
     // slice: "alpha bravo char" is 17 chars.
     const ctx = contextFor("https://example.com/", fetcher, { charBudget: new ForwardCharBudget(17) });
 
-    await applyForwardLink(document, anchor, { href: "https://example.com/words" }, ctx);
+    await applyForwardLink(document, anchor, { href: "https://example.com/words" }, ctx, "mod-1");
 
     const forward = document.querySelector("[data-ax-forward]")!;
     expect(forward.textContent).toContain("(truncated)");
@@ -200,6 +204,7 @@ describe("applyForwardLink", () => {
       anchor,
       { href: "https://example.com/one-level" },
       contextFor("https://example.com/", fetcher),
+      "mod-1",
     );
 
     // The forwarded fragment's own link is never itself resolved or

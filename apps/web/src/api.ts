@@ -4,6 +4,7 @@ export interface MarkdownBlock {
   axId: string;
   markdown: string;
   source: "page" | "context" | "forwarded";
+  modificationId?: string;
 }
 
 export interface ModificationStatus {

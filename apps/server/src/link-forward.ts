@@ -185,9 +185,13 @@ function renderForwardNode(document: Document, result: ForwardResult): Element {
  * thousands of words inside the sentence that held it. Shared with
  * apply-modifications.ts's applyContext via insertBesideBlockAncestor.
  */
-function insertForwardNode(document: Document, target: Element, result: ForwardResult): void {
+function insertForwardNode(document: Document, target: Element, result: ForwardResult, modificationId: string): void {
   insertBesideBlockAncestor(document, target, "data-ax-forward", () => {
     const node = renderForwardNode(document, result);
+    // Independent of data-ax-id below (derived from the target element,
+    // not the modification) — lets the modification navigator (NIM-64)
+    // join a client-side Modification back to the block it produced.
+    node.setAttribute("data-ax-mod-id", modificationId);
     const targetAxId = target.getAttribute("data-ax-id");
     if (targetAxId) {
       node.setAttribute("data-ax-id", `${targetAxId}-forward`);
@@ -201,22 +205,23 @@ export async function applyForwardLink(
   anchor: Element,
   value: { href: string; maxChars?: number },
   ctx: ForwardContext,
+  modificationId: string,
 ): Promise<void> {
   let destination: string;
   try {
     destination = normalizeUrl(new URL(value.href, ctx.pageUrl).toString());
   } catch {
-    insertForwardNode(document, anchor, { kind: "error", sourceUrl: value.href, message: "Not a valid URL." });
+    insertForwardNode(document, anchor, { kind: "error", sourceUrl: value.href, message: "Not a valid URL." }, modificationId);
     return;
   }
 
   if (destination === normalizeUrl(ctx.pageUrl)) {
-    insertForwardNode(document, anchor, { kind: "self" });
+    insertForwardNode(document, anchor, { kind: "self" }, modificationId);
     return;
   }
 
   if (ctx.charBudget.exhausted) {
-    insertForwardNode(document, anchor, { kind: "budget-exceeded", sourceUrl: destination });
+    insertForwardNode(document, anchor, { kind: "budget-exceeded", sourceUrl: destination }, modificationId);
     return;
   }
 
@@ -225,7 +230,7 @@ export async function applyForwardLink(
   );
 
   if (result.kind !== "content") {
-    insertForwardNode(document, anchor, result);
+    insertForwardNode(document, anchor, result, modificationId);
     return;
   }
 
@@ -236,9 +241,14 @@ export async function applyForwardLink(
   const allowed = ctx.charBudget.take(wanted);
   const truncated = allowed < result.markdown.length;
 
-  insertForwardNode(document, anchor, {
-    ...result,
-    markdown: truncated ? truncateAtBoundary(result.markdown, allowed) : result.markdown,
-    truncated,
-  });
+  insertForwardNode(
+    document,
+    anchor,
+    {
+      ...result,
+      markdown: truncated ? truncateAtBoundary(result.markdown, allowed) : result.markdown,
+      truncated,
+    },
+    modificationId,
+  );
 }

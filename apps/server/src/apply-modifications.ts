@@ -28,10 +28,15 @@ export function dedupeModifications(modifications: Modification[]): Modification
  * rather than innerHTML means the serializer escapes the publisher's
  * text automatically — no manual escaping to get wrong.
  */
-function applyContext(document: Document, target: Element, text: string): void {
+function applyContext(document: Document, target: Element, text: string, modificationId: string): void {
   insertBesideBlockAncestor(document, target, "data-ax-context", () => {
     const note = document.createElement("span");
     note.setAttribute("data-ax-context", "");
+    // Tags the note with the modification's own id — independent of
+    // data-ax-id below, which is derived from the *target* element, not
+    // the modification — so the modification navigator (NIM-64) can join
+    // a client-side Modification back to the block it produced.
+    note.setAttribute("data-ax-mod-id", modificationId);
     // buildAgentPayload only emits a Markdown block for elements carrying
     // data-ax-id, assigned once before any modification runs. Derive the
     // note's id from the originally targeted element rather than the
@@ -123,11 +128,11 @@ export async function applyModifications(
         element.remove();
         break;
       case "context":
-        applyContext(document, element, modification.value.text);
+        applyContext(document, element, modification.value.text, modification.id);
         break;
       case "forwardLink":
         if (forwardCtx) {
-          await applyForwardLink(document, element, modification.value, forwardCtx);
+          await applyForwardLink(document, element, modification.value, forwardCtx, modification.id);
         }
         break;
     }

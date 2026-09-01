@@ -161,6 +161,19 @@ describe("applyModifications: context", () => {
     expect(note.getAttribute("data-ax-id")).toBe("ax-7-context");
   });
 
+  it("carries the modification's own id, independent of the target-derived data-ax-id, so the modification navigator (NIM-64) can join a block back to the modification that produced it", () => {
+    const document = documentFrom("<body><p data-ax-id='ax-7'>Target</p></body>");
+    const target = buildLocator(document.querySelector("p")!);
+    const modifications: Modification[] = [
+      { id: "mod-42", type: "context", target, value: { text: "Explanation" } },
+    ];
+
+    applyModifications(document, modifications);
+
+    const note = document.querySelector("[data-ax-context]")!;
+    expect(note.getAttribute("data-ax-mod-id")).toBe("mod-42");
+  });
+
   it("does not carry the note as an attribute, comment, or aria-label", () => {
     const document = documentFrom("<body><p>Some text</p></body>");
     const target = buildLocator(document.querySelector("p")!);
