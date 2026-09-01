@@ -33,6 +33,11 @@ interface HumanPreviewProps {
   // times, not silently no-op the second time because the locator didn't
   // change.
   revealRequest?: { locator: Locator; token: number } | null;
+  // Same idea as revealRequest, but for a block that's never been
+  // modified (NIM-66) — the agent payload only ever gives us its axId,
+  // never a full Locator, so this resolves by the shared data-ax-id
+  // attribute instead of by path+fingerprint.
+  locateRequest?: { axId: string; token: number } | null;
   // Marked in the preview always, unasked (NIM-57) — every modification
   // on the page, not just the one currently selected or being reviewed.
   modifications: Modification[];
@@ -84,7 +89,7 @@ export function buildMarkPayload(modifications: Modification[]): MarkPayloadEntr
  * is needed only so the overlay script below can run — the fetched page's
  * own scripts were already stripped by sanitizeDocument (ADR-0005).
  */
-export function HumanPreview({ url, onSelect, revealRequest, modifications }: HumanPreviewProps) {
+export function HumanPreview({ url, onSelect, revealRequest, locateRequest, modifications }: HumanPreviewProps) {
   const [state, setState] = useState<PreviewState>({ status: "loading" });
   const iframeRef = useRef<HTMLIFrameElement>(null);
   // A ref, not just the prop, because the overlay's "ready" ping arrives
@@ -93,12 +98,34 @@ export function HumanPreview({ url, onSelect, revealRequest, modifications }: Hu
   // can't close over a fresh `modifications` value without one.
   const modificationsRef = useRef(modifications);
   modificationsRef.current = modifications;
+  // Same reasoning as modificationsRef: a locate/reveal request can land
+  // in the very same tick the iframe first mounts (switching straight
+  // from Agent view via a Markdown block's popover, NIM-66) — the
+  // postMessage below would silently vanish if sent before the overlay
+  // script has even attached its listener, so both are re-sent once
+  // "ax:overlay-ready" arrives, not just on the request's own change.
+  const revealRequestRef = useRef(revealRequest);
+  revealRequestRef.current = revealRequest;
+  const locateRequestRef = useRef(locateRequest);
+  locateRequestRef.current = locateRequest;
 
   function sendMarks() {
     iframeRef.current?.contentWindow?.postMessage(
       { type: "ax:mark-modifications", modifications: buildMarkPayload(modificationsRef.current) },
       "*",
     );
+  }
+
+  function sendReveal() {
+    const request = revealRequestRef.current;
+    if (!request) return;
+    iframeRef.current?.contentWindow?.postMessage({ type: "ax:reveal", locator: request.locator }, "*");
+  }
+
+  function sendLocate() {
+    const request = locateRequestRef.current;
+    if (!request) return;
+    iframeRef.current?.contentWindow?.postMessage({ type: "ax:locate", axId: request.axId }, "*");
   }
 
   useEffect(() => {
@@ -138,6 +165,8 @@ export function HumanPreview({ url, onSelect, revealRequest, modifications }: Hu
       // fixed delay against an iframe load event that fires too early.
       if ((event.data as { type?: unknown } | null)?.type === "ax:overlay-ready") {
         sendMarks();
+        sendReveal();
+        sendLocate();
       }
     }
     window.addEventListener("message", handleMessage);
@@ -150,9 +179,14 @@ export function HumanPreview({ url, onSelect, revealRequest, modifications }: Hu
   // access into it, so the request crosses via postMessage the same way
   // a click's selection crosses back out.
   useEffect(() => {
-    if (!revealRequest) return;
-    iframeRef.current?.contentWindow?.postMessage({ type: "ax:reveal", locator: revealRequest.locator }, "*");
+    sendReveal();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [revealRequest]);
+
+  useEffect(() => {
+    sendLocate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locateRequest]);
 
   // Marks are always on (NIM-57's explicit requirement) — re-sent
   // whenever the modification list itself changes, not just once at

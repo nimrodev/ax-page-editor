@@ -196,6 +196,14 @@ export const IFRAME_OVERLAY_SCRIPT = `
     });
   }
 
+  function revealElement(el) {
+    if (selected) clearHighlight(selected);
+    setHighlight(el);
+    selected = el;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    postSelect(el);
+  }
+
   // Lets the parent ask this frame to scroll to and highlight a
   // previously-applied modification's element — the reverse direction of
   // the click-to-select flow above, driven by the review list rather
@@ -208,17 +216,30 @@ export const IFRAME_OVERLAY_SCRIPT = `
       return;
     }
 
+    // Locating an ordinary, never-modified Markdown block (NIM-66): there
+    // is no stored Locator for it yet — the agent payload only carries
+    // its axId — but that's the same axId this frame's own elements
+    // carry (both come from the same assignAxIds pass), so a direct
+    // attribute lookup is all resolution this case needs. ax:reveal
+    // below stays locator-based for the case that does have one: a
+    // modification whose target may have moved since it was applied.
+    if (event.data.type === "ax:locate") {
+      var byAxId = document.querySelector('[data-ax-id="' + event.data.axId + '"]');
+      if (!byAxId) {
+        window.parent.postMessage({ type: "ax:reveal-failed" }, "*");
+        return;
+      }
+      revealElement(byAxId);
+      return;
+    }
+
     if (event.data.type !== "ax:reveal") return;
     var el = resolveLocator(event.data.locator);
     if (!el) {
       window.parent.postMessage({ type: "ax:reveal-failed" }, "*");
       return;
     }
-    if (selected) clearHighlight(selected);
-    setHighlight(el);
-    selected = el;
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
-    postSelect(el);
+    revealElement(el);
   });
 
   // The parent has no way to know when this script has finished setting

@@ -74,9 +74,38 @@ export default function App() {
   const [loadedInfo, setLoadedInfo] = useState<{ count: number; updatedAt: string } | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [revealRequest, setRevealRequest] = useState<{ locator: Locator; token: number } | null>(null);
+  const [locateRequest, setLocateRequest] = useState<{ axId: string; token: number } | null>(null);
+  // Set by clicking "Hide" in a Markdown block's popover (NIM-66), before
+  // the real element is even found — Hide needs a full Locator, which a
+  // never-modified block doesn't carry, only an axId. Locating resolves
+  // the live element and (via the normal ax:select round trip) hands
+  // back a real Selection; handleSelect below applies the hide the
+  // instant one arrives whose axId matches what was asked for, so a
+  // publisher never sees an extra "now click Hide again" step.
+  const [pendingHideAxId, setPendingHideAxId] = useState<string | null>(null);
   const isDirty = serializeModifications(modifications) !== serializeModifications(savedModifications);
 
-  const handleSelect = useCallback((next: Selection) => setSelection(next), []);
+  const handleHide = useCallback((target: Selection) => {
+    const id = modificationId("hide", target.locator.path);
+    setModifications((prev) => [
+      ...prev.filter((m) => m.id !== id),
+      { id, type: "hide", target: target.locator },
+    ]);
+  }, []);
+
+  const handleSelect = useCallback(
+    (next: Selection) => {
+      setSelection(next);
+      setPendingHideAxId((pending) => {
+        if (pending === next.axId) {
+          handleHide(next);
+          return null;
+        }
+        return pending;
+      });
+    },
+    [handleHide],
+  );
 
   // Reviewing a modification from the review list (NIM-55) should behave
   // like reviewing it any other way: switch to the view that actually
@@ -88,13 +117,22 @@ export default function App() {
     setRevealRequest({ locator: modification.target, token: Date.now() });
   }, []);
 
-  const handleHide = useCallback((target: Selection) => {
-    const id = modificationId("hide", target.locator.path);
-    setModifications((prev) => [
-      ...prev.filter((m) => m.id !== id),
-      { id, type: "hide", target: target.locator },
-    ]);
+  // Clicking a Markdown block's popover (NIM-66): all three actions start
+  // by locating the element in Human view — Hide and Add-context just
+  // additionally act once the real Selection for it comes back.
+  const handleLocateBlock = useCallback((axId: string) => {
+    setView("human");
+    setHumanViewRequested(true);
+    setLocateRequest({ axId, token: Date.now() });
   }, []);
+
+  const handleHideBlock = useCallback(
+    (axId: string) => {
+      setPendingHideAxId(axId);
+      handleLocateBlock(axId);
+    },
+    [handleLocateBlock],
+  );
 
   const handleSetContext = useCallback((target: Selection, text: string) => {
     const id = modificationId("context", target.locator.path);
@@ -318,7 +356,15 @@ export default function App() {
                   HTML
                 </button>
               </div>
-              <AgentPayloadView payload={state.payload} format={format} modifications={modifications} view={view} />
+              <AgentPayloadView
+                payload={state.payload}
+                format={format}
+                modifications={modifications}
+                view={view}
+                onLocateBlock={handleLocateBlock}
+                onHideBlock={handleHideBlock}
+                onRemoveModification={handleRemove}
+              />
             </div>
 
             {/*
@@ -369,6 +415,7 @@ export default function App() {
                     url={state.url}
                     onSelect={handleSelect}
                     revealRequest={revealRequest}
+                    locateRequest={locateRequest}
                     modifications={modifications}
                   />
                 </div>

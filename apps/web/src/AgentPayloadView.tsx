@@ -3,12 +3,16 @@ import { Modification } from "@ax/schema";
 import { AgentPayload, MarkdownBlock } from "./api";
 import { MarkerKind, splitHtmlByMarkers, wrapIndex } from "./agent-view-marks";
 import { buildNavigatorEntries, ModificationNavigator, NavigatorEntry } from "./ModificationNavigator";
+import { BlockPopover, buildBlockPopoverModel } from "./BlockPopover";
 
 interface AgentPayloadViewProps {
   payload: AgentPayload;
   format: "markdown" | "html";
   modifications: Modification[];
   view: "agent" | "human";
+  onLocateBlock: (axId: string) => void;
+  onHideBlock: (axId: string) => void;
+  onRemoveModification: (modificationId: string) => void;
 }
 
 interface SourceStyle {
@@ -43,6 +47,8 @@ const MARK_CLASS: Record<MarkerKind, string> = {
   forwarded: "rounded bg-indigo-100 text-indigo-900",
 };
 
+const HINT_DISMISSED_KEY = "ax-block-hint-dismissed";
+
 function flashElement(el: HTMLElement, color: string): void {
   el.style.setProperty("--ax-jump-flash-color", color);
   el.classList.add("ax-jump-flash");
@@ -57,7 +63,15 @@ function flashElement(el: HTMLElement, color: string): void {
  */
 const SCROLL_TOP_THRESHOLD = 400;
 
-export function AgentPayloadView({ payload, format, modifications, view }: AgentPayloadViewProps) {
+export function AgentPayloadView({
+  payload,
+  format,
+  modifications,
+  view,
+  onLocateBlock,
+  onHideBlock,
+  onRemoveModification,
+}: AgentPayloadViewProps) {
   const changedBlocks = useMemo(
     () => payload.markdownBlocks.filter((b) => b.source !== "page"),
     [payload.markdownBlocks],
@@ -67,7 +81,12 @@ export function AgentPayloadView({ payload, format, modifications, view }: Agent
   const [expanded, setExpanded] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [openPopoverAxId, setOpenPopoverAxId] = useState<string | null>(null);
+  const [hintDismissed, setHintDismissed] = useState(
+    () => typeof localStorage !== "undefined" && localStorage.getItem(HINT_DISMISSED_KEY) === "1",
+  );
   const marksRef = useRef(new Map<string, HTMLElement>());
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // The payload can run to hundreds of blocks with nothing but the window
   // itself to scroll — this button only earns its place once you've
@@ -87,6 +106,17 @@ export function AgentPayloadView({ payload, format, modifications, view }: Agent
     setIndex(0);
     setActiveId(null);
   }, [payload]);
+
+  // Closes the block popover on any click outside it — the popover itself
+  // stops its own click events from bubbling here (see the onClick below).
+  useEffect(() => {
+    if (!openPopoverAxId) return;
+    function handleDocumentClick() {
+      setOpenPopoverAxId(null);
+    }
+    document.addEventListener("click", handleDocumentClick);
+    return () => document.removeEventListener("click", handleDocumentClick);
+  }, [openPopoverAxId]);
 
   const safeIndex = wrapIndex(index, changedBlocks.length);
   const [suggestResume, setSuggestResume] = useState(false);
@@ -155,6 +185,11 @@ export function AgentPayloadView({ payload, format, modifications, view }: Agent
     jumpTo(safeIndex);
   }
 
+  function dismissHint(): void {
+    setHintDismissed(true);
+    localStorage.setItem(HINT_DISMISSED_KEY, "1");
+  }
+
   const htmlSegments = useMemo(
     () => (format === "html" ? splitHtmlByMarkers(payload.html) : null),
     [format, payload.html],
@@ -171,16 +206,29 @@ export function AgentPayloadView({ payload, format, modifications, view }: Agent
   }
 
   return (
-    <div>
+    <div ref={containerRef}>
+      {format === "markdown" && !hintDismissed && (
+        <div className="mb-3 flex items-center justify-between rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <span>Click any paragraph below to locate it on your page, or hide/annotate it directly.</span>
+          <button onClick={dismissHint} aria-label="Dismiss" className="text-amber-700 hover:underline">
+            Got it
+          </button>
+        </div>
+      )}
       {format === "markdown" ? (
         <div className="space-y-4 rounded border border-slate-200 bg-white p-4">
           {payload.markdownBlocks.map((block) => {
             const style = SOURCE_STYLES[block.source];
+            const isOpen = openPopoverAxId === block.axId;
             return (
               <div
                 key={block.axId}
                 ref={(el) => registerMark(block.source === "page" ? undefined : block.axId, el)}
-                className={`rounded py-1 ${style.wrapperClass}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpenPopoverAxId((current) => (current === block.axId ? null : block.axId));
+                }}
+                className={`relative cursor-pointer rounded py-1 ring-inset transition-shadow hover:ring-1 hover:ring-amber-300 ${isOpen ? "ring-1 ring-amber-400" : ""} ${style.wrapperClass}`}
               >
                 {style.label && (
                   <span className={`mb-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${style.labelClass}`}>
@@ -188,6 +236,29 @@ export function AgentPayloadView({ payload, format, modifications, view }: Agent
                   </span>
                 )}
                 <p className="whitespace-pre-wrap text-sm text-slate-700">{block.markdown}</p>
+                {isOpen && (
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <BlockPopover
+                      model={buildBlockPopoverModel(block, modifications)}
+                      onLocate={() => {
+                        setOpenPopoverAxId(null);
+                        onLocateBlock(block.axId);
+                      }}
+                      onHide={() => {
+                        setOpenPopoverAxId(null);
+                        onHideBlock(block.axId);
+                      }}
+                      onAddContext={() => {
+                        setOpenPopoverAxId(null);
+                        onLocateBlock(block.axId);
+                      }}
+                      onRemove={(modificationId) => {
+                        setOpenPopoverAxId(null);
+                        onRemoveModification(modificationId);
+                      }}
+                    />
+                  </div>
+                )}
               </div>
             );
           })}
