@@ -49,7 +49,14 @@ export type ModificationType = Modification["type"];
  */
 export const ConfigurationSchema = z.object({
   version: z.literal(1),
+  // The normalized URL is the configuration's identity (CONTEXT.md —
+  // Configuration): what two differently-punctuated addresses for the
+  // same page collapse onto, and what storage keys on. originalUrl is
+  // never used for lookup — it exists purely so the publisher sees the
+  // address they actually typed (NIM-53), not a normalized one they
+  // never entered.
   url: z.string().url(),
+  originalUrl: z.string().url(),
   updatedAt: z.string().datetime(),
   modifications: z.array(ModificationSchema),
 });

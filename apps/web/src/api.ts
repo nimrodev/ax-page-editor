@@ -1,4 +1,6 @@
-import { RenderFailureReason, Modification } from "@ax/schema";
+import { RenderFailureReason, Modification, Configuration } from "@ax/schema";
+
+export type { Configuration };
 
 export interface MarkdownBlock {
   axId: string;
@@ -52,4 +54,24 @@ export function renderPage(url: string, modifications: Modification[] = []): Pro
 
 export function fetchHumanView(url: string): Promise<HumanViewPayload> {
   return post("/api/page", { url });
+}
+
+export function saveConfiguration(url: string, modifications: Modification[]): Promise<Configuration> {
+  return post("/api/configuration", { url, modifications });
+}
+
+/**
+ * Null both when nothing was ever saved for this page and when the
+ * request itself fails — restoring a saved configuration is a courtesy,
+ * not something a network blip should turn into a page-load error.
+ */
+export async function loadConfiguration(url: string): Promise<Configuration | null> {
+  try {
+    const res = await fetch(`/api/configuration?url=${encodeURIComponent(url)}`);
+    if (!res.ok) return null;
+    const body: { configuration: Configuration | null } = await res.json();
+    return body.configuration;
+  } catch {
+    return null;
+  }
 }

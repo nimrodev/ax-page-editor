@@ -1,10 +1,11 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Modification } from "@ax/schema";
-import { AgentPayload, RenderFailure, renderPage } from "./api";
+import { AgentPayload, RenderFailure, loadConfiguration, renderPage, saveConfiguration } from "./api";
 import { failureMessage } from "./failure-messages";
 import { HumanPreview, Selection } from "./HumanPreview";
 import { Inspector } from "./Inspector";
 import { AgentPayloadView } from "./AgentPayloadView";
+import { relativeTime } from "./relative-time";
 
 type LoadState =
   | { status: "idle" }
@@ -23,6 +24,38 @@ function modificationId(type: string, path: string): string {
   return `${type}:${path}`;
 }
 
+/**
+ * JSON.stringify with object keys sorted at every level, so two
+ * structurally-identical objects always serialize identically regardless
+ * of the order their keys were assigned in. Plain JSON.stringify is
+ * insensitive to *this* — a modification built client-side as
+ * `{ id, type, target, value }` and the same modification round-tripped
+ * through the server's zod schema (which reconstructs objects in
+ * schema-declared field order) are equal in every way that matters, but
+ * would otherwise serialize to two different strings and register as a
+ * phantom "unsaved change" forever.
+ */
+export function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
+    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/**
+ * A stable, order-independent fingerprint of a modification list — used
+ * to tell "unsaved changes" apart from "the same set of modifications,
+ * just accumulated (or returned by the server) in a different order"
+ * (NIM-53). Sorting by id first means two lists containing the same
+ * modifications always compare equal regardless of sequence; stableStringify
+ * then does the same for each modification's own keys.
+ */
+export function serializeModifications(modifications: Modification[]): string {
+  return stableStringify([...modifications].sort((a, b) => a.id.localeCompare(b.id)));
+}
+
 export default function App() {
   const [url, setUrl] = useState("");
   const [state, setState] = useState<LoadState>({ status: "idle" });
@@ -31,6 +64,14 @@ export default function App() {
   const [humanViewRequested, setHumanViewRequested] = useState(false);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [modifications, setModifications] = useState<Modification[]>([]);
+  // What's actually on disk for this page, as of the last save or load —
+  // the baseline "unsaved changes" is measured against. Starts as an
+  // empty list rather than null: a page with nothing saved yet is a
+  // legitimate "nothing to be unsaved from" state, not a pending unknown.
+  const [savedModifications, setSavedModifications] = useState<Modification[]>([]);
+  const [loadedInfo, setLoadedInfo] = useState<{ count: number; updatedAt: string } | null>(null);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const isDirty = serializeModifications(modifications) !== serializeModifications(savedModifications);
 
   const handleSelect = useCallback((next: Selection) => setSelection(next), []);
 
@@ -68,21 +109,64 @@ export default function App() {
     e.preventDefault();
     if (!url.trim()) return;
 
+    // Loading a different page abandons the current one's in-progress
+    // edits just as surely as closing the tab does — the beforeunload
+    // guard below can't see this navigation at all, since the document
+    // never actually unloads.
+    if (isDirty && !window.confirm("You have unsaved changes on this page. Load a new page anyway?")) {
+      return;
+    }
+
     const submittedUrl = url.trim();
     setState({ status: "loading" });
     setView("agent");
     setHumanViewRequested(false);
     setSelection(null);
     setModifications([]);
+    setSavedModifications([]);
+    setLoadedInfo(null);
+    setSaveStatus("idle");
     try {
       const payload = await renderPage(submittedUrl);
       setState({ status: "ready", url: submittedUrl, payload });
+
+      const saved = await loadConfiguration(submittedUrl);
+      if (saved && saved.modifications.length > 0) {
+        setModifications(saved.modifications);
+        setSavedModifications(saved.modifications);
+        setLoadedInfo({ count: saved.modifications.length, updatedAt: saved.updatedAt });
+      }
     } catch (err) {
       const message =
         err instanceof RenderFailure ? failureMessage(err.reason) : failureMessage("unknown");
       setState({ status: "error", message });
     }
   }
+
+  async function handleSave() {
+    if (state.status !== "ready") return;
+    setSaveStatus("saving");
+    try {
+      const saved = await saveConfiguration(state.url, modifications);
+      setSavedModifications(saved.modifications);
+      setSaveStatus("saved");
+    } catch {
+      setSaveStatus("error");
+    }
+  }
+
+  // Covers an actual tab close/refresh/navigation-away — the in-app "load
+  // a different page" path above is a separate guard, since swapping
+  // `url` state never fires this event at all.
+  useEffect(() => {
+    function handleBeforeUnload(e: BeforeUnloadEvent) {
+      if (!isDirty) return;
+      e.preventDefault();
+      e.returnValue = "";
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isDirty]);
 
   // Re-renders the agent payload whenever the modification list changes,
   // so hiding something in Human view is reflected in Agent view without
@@ -136,6 +220,27 @@ export default function App() {
           >
             {state.status === "loading" ? "Loading…" : "Load page"}
           </button>
+          {state.status === "ready" && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={!isDirty || saveStatus === "saving"}
+                className="rounded border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 disabled:opacity-50"
+              >
+                {saveStatus === "saving" ? "Saving…" : "Save"}
+              </button>
+              <span className="text-xs text-slate-500">
+                {isDirty
+                  ? "Unsaved changes"
+                  : saveStatus === "saved"
+                    ? "Saved"
+                    : saveStatus === "error"
+                      ? "Couldn't save — try again"
+                      : null}
+              </span>
+            </div>
+          )}
         </form>
       </header>
 
@@ -154,6 +259,17 @@ export default function App() {
 
         {state.status === "ready" && (
           <div>
+            {loadedInfo && (
+              <div className="mb-3 flex items-center justify-between rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+                <span>
+                  Loaded {loadedInfo.count} saved {loadedInfo.count === 1 ? "modification" : "modifications"}, saved{" "}
+                  {relativeTime(loadedInfo.updatedAt)}.
+                </span>
+                <button onClick={() => setLoadedInfo(null)} aria-label="Dismiss" className="text-blue-600 hover:underline">
+                  Dismiss
+                </button>
+              </div>
+            )}
             <div className="mb-3 flex items-center justify-between">
               <p className="text-sm text-slate-500">
                 {view === "agent" ? "This is what an AI agent sees today." : "The page as it actually looks."}
