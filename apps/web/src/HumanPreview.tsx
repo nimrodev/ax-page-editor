@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Locator } from "@ax/schema";
+import { Locator, Modification } from "@ax/schema";
 import { fetchHumanView, RenderFailure } from "./api";
 import { failureMessage } from "./failure-messages";
 import { IFRAME_OVERLAY_SCRIPT } from "./iframe-overlay";
@@ -33,6 +33,9 @@ interface HumanPreviewProps {
   // times, not silently no-op the second time because the locator didn't
   // change.
   revealRequest?: { locator: Locator; token: number } | null;
+  // Marked in the preview always, unasked (NIM-57) — every modification
+  // on the page, not just the one currently selected or being reviewed.
+  modifications: Modification[];
 }
 
 type PreviewState =
@@ -46,9 +49,25 @@ type PreviewState =
  * is needed only so the overlay script below can run — the fetched page's
  * own scripts were already stripped by sanitizeDocument (ADR-0005).
  */
-export function HumanPreview({ url, onSelect, revealRequest }: HumanPreviewProps) {
+export function HumanPreview({ url, onSelect, revealRequest, modifications }: HumanPreviewProps) {
   const [state, setState] = useState<PreviewState>({ status: "loading" });
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  // A ref, not just the prop, because the overlay's "ready" ping arrives
+  // on its own schedule (whenever the srcdoc's script finishes setting
+  // up) — the message handler that reacts to it is created once and
+  // can't close over a fresh `modifications` value without one.
+  const modificationsRef = useRef(modifications);
+  modificationsRef.current = modifications;
+
+  function sendMarks() {
+    iframeRef.current?.contentWindow?.postMessage(
+      {
+        type: "ax:mark-modifications",
+        modifications: modificationsRef.current.map((m) => ({ id: m.id, type: m.type, target: m.target })),
+      },
+      "*",
+    );
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -81,9 +100,17 @@ export function HumanPreview({ url, onSelect, revealRequest }: HumanPreviewProps
           locator: event.data.locator,
         });
       }
+      // The srcdoc's script sets up its listeners on its own schedule —
+      // this ping is how it tells the parent it's actually ready to
+      // receive "ax:mark-modifications", rather than the parent racing a
+      // fixed delay against an iframe load event that fires too early.
+      if ((event.data as { type?: unknown } | null)?.type === "ax:overlay-ready") {
+        sendMarks();
+      }
     }
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onSelect]);
 
   // The review list (NIM-55) asking to reveal a modification whose
@@ -94,6 +121,15 @@ export function HumanPreview({ url, onSelect, revealRequest }: HumanPreviewProps
     if (!revealRequest) return;
     iframeRef.current?.contentWindow?.postMessage({ type: "ax:reveal", locator: revealRequest.locator }, "*");
   }, [revealRequest]);
+
+  // Marks are always on (NIM-57's explicit requirement) — re-sent
+  // whenever the modification list itself changes, not just once at
+  // load, so hiding or removing something in the Inspector is reflected
+  // here without a page reload.
+  useEffect(() => {
+    sendMarks();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modifications]);
 
   if (state.status === "loading") {
     return <p className="text-slate-500">Loading preview…</p>;

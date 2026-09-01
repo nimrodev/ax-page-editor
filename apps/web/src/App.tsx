@@ -333,7 +333,36 @@ export default function App() {
             {humanViewRequested && (
               <div style={{ display: view === "human" ? "flex" : "none" }} className="gap-4">
                 <div className="flex-1">
-                  <HumanPreview url={state.url} onSelect={handleSelect} revealRequest={revealRequest} />
+                  <div className="mb-2 flex items-center gap-4 text-xs text-slate-500">
+                    <span className="font-medium text-slate-600">Marked on the page:</span>
+                    <span className="flex items-center gap-1.5">
+                      <span
+                        className="inline-block h-3 w-3 rounded-sm border-2 border-dashed"
+                        style={{ borderColor: "#94a3b8" }}
+                      />
+                      Hidden from agents
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span
+                        className="inline-block h-3 w-3 rounded-sm border-2 border-dashed"
+                        style={{ borderColor: "#3b82f6" }}
+                      />
+                      Context note
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span
+                        className="inline-block h-3 w-3 rounded-sm border-2 border-dashed"
+                        style={{ borderColor: "#6366f1" }}
+                      />
+                      Forwarded link
+                    </span>
+                  </div>
+                  <HumanPreview
+                    url={state.url}
+                    onSelect={handleSelect}
+                    revealRequest={revealRequest}
+                    modifications={modifications}
+                  />
                 </div>
                 <div className="flex shrink-0 flex-col gap-4">
                   <Inspector

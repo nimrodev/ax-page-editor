@@ -123,12 +123,67 @@ export const IFRAME_OVERLAY_SCRIPT = `
     return candidate;
   }
 
+  // One outline color per modification type (NIM-57) — dashed, always,
+  // so it reads as "marked" rather than "selected" (the click/reveal
+  // highlight above is solid). An outline rather than a border or an
+  // overlay div: it never participates in layout (no reflow, no risk of
+  // shifting inline text) and never sits on top of the element it marks,
+  // so it can never block a click on the content underneath — a real
+  // constraint here, not just a style preference.
+  var MARK_OUTLINE = {
+    hide: "2px dashed #94a3b8",
+    context: "2px dashed #3b82f6",
+    forwardLink: "2px dashed #6366f1",
+  };
+  var marked = {}; // modificationId -> element currently marked for it
+
+  function clearMark(el) {
+    el.style.removeProperty("outline");
+    el.style.removeProperty("outline-offset");
+    el.removeAttribute("data-ax-mark");
+  }
+
+  // Replaces the whole marked set on every call rather than diffing
+  // against the previous one — modifications can be added, removed, or
+  // re-anchor to a different element between calls, and re-resolving
+  // everything from scratch is the only way that's never stale.
+  function applyMarks(modifications) {
+    Object.keys(marked).forEach(function (id) {
+      var el = marked[id];
+      // A mark clears even if this element is also the live selection
+      // (clearHighlight would otherwise be undone by clearMark, or vice
+      // versa) — selected and marked are independent style layers, only
+      // one of which this loop owns.
+      if (el !== selected) clearMark(el);
+      else el.removeAttribute("data-ax-mark");
+      delete marked[id];
+    });
+
+    modifications.forEach(function (modification) {
+      var el = resolveLocator(modification.target);
+      if (!el) return;
+      var outline = MARK_OUTLINE[modification.type];
+      if (!outline) return;
+      el.style.setProperty("outline", outline, "important");
+      el.style.setProperty("outline-offset", "2px", "important");
+      el.setAttribute("data-ax-mark", modification.type);
+      marked[modification.id] = el;
+    });
+  }
+
   // Lets the parent ask this frame to scroll to and highlight a
   // previously-applied modification's element — the reverse direction of
   // the click-to-select flow above, driven by the review list rather
   // than a click inside the frame.
   window.addEventListener("message", function (event) {
-    if (!event.data || event.data.type !== "ax:reveal") return;
+    if (!event.data) return;
+
+    if (event.data.type === "ax:mark-modifications") {
+      applyMarks(event.data.modifications || []);
+      return;
+    }
+
+    if (event.data.type !== "ax:reveal") return;
     var el = resolveLocator(event.data.locator);
     if (!el) {
       window.parent.postMessage({ type: "ax:reveal-failed" }, "*");
@@ -140,6 +195,13 @@ export const IFRAME_OVERLAY_SCRIPT = `
     el.scrollIntoView({ behavior: "smooth", block: "center" });
     postSelect(el);
   });
+
+  // The parent has no way to know when this script has finished setting
+  // up its listeners — srcdoc content loads asynchronously from its own
+  // perspective — so it waits for this ping before sending the first
+  // "ax:mark-modifications", rather than racing a fixed delay against an
+  // iframe load event that fires before this IIFE necessarily has.
+  window.parent.postMessage({ type: "ax:overlay-ready" }, "*");
 
   document.addEventListener(
     "click",
