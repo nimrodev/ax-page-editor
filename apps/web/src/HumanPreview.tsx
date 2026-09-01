@@ -28,6 +28,11 @@ function isAxSelectMessage(data: unknown): data is AxSelectMessage {
 interface HumanPreviewProps {
   url: string;
   onSelect: (selection: Selection) => void;
+  // A new token each time, even for the same locator — clicking the same
+  // review-list row twice should re-reveal it (re-scroll, re-flash) both
+  // times, not silently no-op the second time because the locator didn't
+  // change.
+  revealRequest?: { locator: Locator; token: number } | null;
 }
 
 type PreviewState =
@@ -41,7 +46,7 @@ type PreviewState =
  * is needed only so the overlay script below can run — the fetched page's
  * own scripts were already stripped by sanitizeDocument (ADR-0005).
  */
-export function HumanPreview({ url, onSelect }: HumanPreviewProps) {
+export function HumanPreview({ url, onSelect, revealRequest }: HumanPreviewProps) {
   const [state, setState] = useState<PreviewState>({ status: "loading" });
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
@@ -80,6 +85,15 @@ export function HumanPreview({ url, onSelect }: HumanPreviewProps) {
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
   }, [onSelect]);
+
+  // The review list (NIM-55) asking to reveal a modification whose
+  // element lives inside the sandboxed iframe — this frame has no DOM
+  // access into it, so the request crosses via postMessage the same way
+  // a click's selection crosses back out.
+  useEffect(() => {
+    if (!revealRequest) return;
+    iframeRef.current?.contentWindow?.postMessage({ type: "ax:reveal", locator: revealRequest.locator }, "*");
+  }, [revealRequest]);
 
   if (state.status === "loading") {
     return <p className="text-slate-500">Loading preview…</p>;

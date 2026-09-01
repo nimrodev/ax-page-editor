@@ -15,13 +15,13 @@ export interface NavigatorEntry {
   axId?: string;
 }
 
-const LABEL_LIMIT = 60;
+export const LABEL_LIMIT = 60;
 
-function truncate(text: string, limit: number): string {
+export function truncate(text: string, limit: number): string {
   return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
 }
 
-function labelFor(modification: Modification): string {
+export function labelFor(modification: Modification): string {
   switch (modification.type) {
     case "hide":
       return modification.target.textHint || "This element";
@@ -55,7 +55,7 @@ export function buildNavigatorEntries(modifications: Modification[], payload: Ag
   }));
 }
 
-const TYPE_META: Record<
+export const TYPE_META: Record<
   Modification["type"],
   { icon: string; iconClass: string; borderClass: string; typeLabel: string }
 > = {

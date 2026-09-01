@@ -19,11 +19,25 @@ function extractClientBuildLocator(): (el: Element) => unknown {
   const scriptBody = IFRAME_OVERLAY_SCRIPT.match(/<script>([\s\S]*?)<\/script>/)?.[1];
   if (!scriptBody) throw new Error("Could not find the overlay's <script> body");
 
-  const withoutListener = scriptBody.replace(
+  // Not a regex for the message listener — its callback body itself
+  // contains a "});" substring (el.scrollIntoView({...})), so a
+  // non-greedy /\}\);/ terminator matches too early and leaves the rest
+  // of the block as a dangling syntax error. Slicing out everything
+  // between the listener's own start and the next top-level statement
+  // (the click listener registration) doesn't have that problem — but
+  // has to run before the click listener itself is stripped, since that
+  // removal is what this slice anchors on.
+  const messageListenerStart = scriptBody.indexOf('window.addEventListener("message"');
+  const clickListenerStart = scriptBody.indexOf("document.addEventListener(");
+  const withoutMessageListener =
+    messageListenerStart === -1
+      ? scriptBody
+      : scriptBody.slice(0, messageListenerStart) + scriptBody.slice(clickListenerStart);
+  const withoutClickListener = withoutMessageListener.replace(
     /document\.addEventListener\(\s*"click",[\s\S]*?true,\s*\);/,
     "",
   );
-  const withoutIife = withoutListener
+  const withoutIife = withoutClickListener
     .replace(/^\s*\(function \(\) \{/, "")
     .replace(/\}\)\(\);\s*$/, "");
   const exposed = withoutIife + "\nmodule.exports.buildLocator = buildLocator;";

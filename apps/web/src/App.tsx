@@ -1,11 +1,12 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { Modification } from "@ax/schema";
+import { Locator, Modification } from "@ax/schema";
 import { AgentPayload, RenderFailure, loadConfiguration, renderPage, saveConfiguration } from "./api";
 import { failureMessage } from "./failure-messages";
 import { HumanPreview, Selection } from "./HumanPreview";
 import { Inspector } from "./Inspector";
 import { AgentPayloadView } from "./AgentPayloadView";
 import { relativeTime } from "./relative-time";
+import { buildReviewEntries, ReviewPanel } from "./ReviewPanel";
 
 type LoadState =
   | { status: "idle" }
@@ -71,9 +72,20 @@ export default function App() {
   const [savedModifications, setSavedModifications] = useState<Modification[]>([]);
   const [loadedInfo, setLoadedInfo] = useState<{ count: number; updatedAt: string } | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [revealRequest, setRevealRequest] = useState<{ locator: Locator; token: number } | null>(null);
   const isDirty = serializeModifications(modifications) !== serializeModifications(savedModifications);
 
   const handleSelect = useCallback((next: Selection) => setSelection(next), []);
+
+  // Reviewing a modification from the review list (NIM-55) should behave
+  // like reviewing it any other way: switch to the view that actually
+  // shows it, and let the reveal round-trip through the iframe drive
+  // Inspector's selection the same way a click would.
+  const handleReveal = useCallback((modification: Modification) => {
+    setView("human");
+    setHumanViewRequested(true);
+    setRevealRequest({ locator: modification.target, token: Date.now() });
+  }, []);
 
   const handleHide = useCallback((target: Selection) => {
     const id = modificationId("hide", target.locator.path);
@@ -321,17 +333,27 @@ export default function App() {
             {humanViewRequested && (
               <div style={{ display: view === "human" ? "flex" : "none" }} className="gap-4">
                 <div className="flex-1">
-                  <HumanPreview url={state.url} onSelect={handleSelect} />
+                  <HumanPreview url={state.url} onSelect={handleSelect} revealRequest={revealRequest} />
                 </div>
-                <Inspector
-                  selection={selection}
-                  modifications={modifications}
-                  modificationStatuses={state.status === "ready" ? state.payload.modificationStatuses : []}
-                  onHide={handleHide}
-                  onRemove={handleRemove}
-                  onSetContext={handleSetContext}
-                  onForwardLink={handleForwardLink}
-                />
+                <div className="flex shrink-0 flex-col gap-4">
+                  <Inspector
+                    selection={selection}
+                    modifications={modifications}
+                    modificationStatuses={state.status === "ready" ? state.payload.modificationStatuses : []}
+                    onHide={handleHide}
+                    onRemove={handleRemove}
+                    onSetContext={handleSetContext}
+                    onForwardLink={handleForwardLink}
+                  />
+                  <ReviewPanel
+                    entries={buildReviewEntries(
+                      modifications,
+                      state.status === "ready" ? state.payload.modificationStatuses : [],
+                    )}
+                    onReveal={handleReveal}
+                    onRemove={handleRemove}
+                  />
+                </div>
               </div>
             )}
           </div>

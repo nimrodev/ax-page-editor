@@ -93,6 +93,54 @@ export const IFRAME_OVERLAY_SCRIPT = `
     return null;
   }
 
+  function postSelect(el) {
+    window.parent.postMessage(
+      {
+        type: "ax:select",
+        axId: el.getAttribute("data-ax-id"),
+        tag: el.tagName.toLowerCase(),
+        text: (el.textContent || "").trim().slice(0, 300),
+        href: el.getAttribute("href"),
+        locator: buildLocator(el),
+      },
+      "*",
+    );
+  }
+
+  // Mirrors resolve-locator.ts's exact-tier check (path resolves AND the
+  // live fingerprint still matches) — this is the one place the review
+  // list (NIM-55) can turn a stored Locator back into a real element to
+  // reveal, since the parent has no DOM access into this sandboxed frame.
+  function resolveLocator(locator) {
+    var candidate;
+    try {
+      candidate = document.querySelector(locator.path);
+    } catch (e) {
+      return null;
+    }
+    if (!candidate) return null;
+    if (buildLocator(candidate).fingerprint !== locator.fingerprint) return null;
+    return candidate;
+  }
+
+  // Lets the parent ask this frame to scroll to and highlight a
+  // previously-applied modification's element — the reverse direction of
+  // the click-to-select flow above, driven by the review list rather
+  // than a click inside the frame.
+  window.addEventListener("message", function (event) {
+    if (!event.data || event.data.type !== "ax:reveal") return;
+    var el = resolveLocator(event.data.locator);
+    if (!el) {
+      window.parent.postMessage({ type: "ax:reveal-failed" }, "*");
+      return;
+    }
+    if (selected) clearHighlight(selected);
+    setHighlight(el);
+    selected = el;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    postSelect(el);
+  });
+
   document.addEventListener(
     "click",
     function (event) {
@@ -103,18 +151,7 @@ export const IFRAME_OVERLAY_SCRIPT = `
       if (selected) clearHighlight(selected);
       setHighlight(match.el);
       selected = match.el;
-
-      window.parent.postMessage(
-        {
-          type: "ax:select",
-          axId: match.id,
-          tag: match.el.tagName.toLowerCase(),
-          text: (match.el.textContent || "").trim().slice(0, 300),
-          href: match.el.getAttribute("href"),
-          locator: buildLocator(match.el),
-        },
-        "*",
-      );
+      postSelect(match.el);
     },
     true,
   );
