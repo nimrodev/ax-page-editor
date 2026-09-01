@@ -43,6 +43,23 @@ type PreviewState =
   | { status: "error"; message: string }
   | { status: "ready"; html: string };
 
+export interface MarkPayloadEntry {
+  id: string;
+  type: Modification["type"];
+  target: Locator;
+}
+
+/**
+ * Strips each modification down to what the overlay script actually
+ * needs to mark it (NIM-57) — an id, a type to pick the outline color,
+ * and the locator to resolve. Dropping `value` isn't just tidiness: a
+ * context note's full text has no reason to cross into the sandboxed
+ * iframe at all when a colored outline is all that's rendered there.
+ */
+export function buildMarkPayload(modifications: Modification[]): MarkPayloadEntry[] {
+  return modifications.map((m) => ({ id: m.id, type: m.type, target: m.target }));
+}
+
 /**
  * Renders the page as it actually looks, in a sandboxed iframe, and turns
  * clicks on its elements into selection events for the parent. allow-scripts
@@ -61,10 +78,7 @@ export function HumanPreview({ url, onSelect, revealRequest, modifications }: Hu
 
   function sendMarks() {
     iframeRef.current?.contentWindow?.postMessage(
-      {
-        type: "ax:mark-modifications",
-        modifications: modificationsRef.current.map((m) => ({ id: m.id, type: m.type, target: m.target })),
-      },
+      { type: "ax:mark-modifications", modifications: buildMarkPayload(modificationsRef.current) },
       "*",
     );
   }
