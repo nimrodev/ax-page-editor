@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Modification } from "@ax/schema";
 import { Selection } from "./HumanPreview";
 import { ModificationStatus } from "./api";
@@ -11,6 +11,12 @@ interface InspectorProps {
   onRemove: (modificationId: string) => void;
   onSetContext: (selection: Selection, text: string) => void;
   onForwardLink: (selection: Selection) => void;
+  // A new (truthy) value focuses the context textarea (NIM-66) — set once
+  // a Markdown block's "Add context" popover action has located its
+  // element and the resulting Selection has arrived, so the publisher
+  // lands with the cursor ready rather than having to find and click the
+  // textarea themselves after already telling the app they want to type.
+  focusContextRequest?: number;
 }
 
 /**
@@ -32,7 +38,9 @@ export function Inspector({
   onRemove,
   onSetContext,
   onForwardLink,
+  focusContextRequest,
 }: InspectorProps) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const hideModification = selection
     ? modifications.find((m) => m.type === "hide" && m.target.path === selection.locator.path)
     : undefined;
@@ -65,6 +73,10 @@ export function Inspector({
   }, [selection?.locator.path]);
 
   const hasUnsavedChange = draftText.trim() !== (contextModification?.value.text ?? "");
+
+  useEffect(() => {
+    if (focusContextRequest) textareaRef.current?.focus();
+  }, [focusContextRequest]);
 
   return (
     <div className="w-96 shrink-0 rounded border border-slate-200 bg-white p-4">
@@ -115,6 +127,7 @@ export function Inspector({
               </p>
             )}
             <textarea
+              ref={textareaRef}
               value={draftText}
               onChange={(e) => setDraftText(e.target.value)}
               placeholder="Explain what this element shows or does…"

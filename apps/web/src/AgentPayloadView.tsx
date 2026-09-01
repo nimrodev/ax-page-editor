@@ -12,6 +12,7 @@ interface AgentPayloadViewProps {
   view: "agent" | "human";
   onLocateBlock: (axId: string) => void;
   onHideBlock: (axId: string) => void;
+  onAddContextBlock: (axId: string) => void;
   onRemoveModification: (modificationId: string) => void;
 }
 
@@ -70,6 +71,7 @@ export function AgentPayloadView({
   view,
   onLocateBlock,
   onHideBlock,
+  onAddContextBlock,
   onRemoveModification,
 }: AgentPayloadViewProps) {
   const changedBlocks = useMemo(
@@ -250,7 +252,7 @@ export function AgentPayloadView({
                       }}
                       onAddContext={() => {
                         setOpenPopoverAxId(null);
-                        onLocateBlock(block.axId);
+                        onAddContextBlock(block.axId);
                       }}
                       onRemove={(modificationId) => {
                         setOpenPopoverAxId(null);

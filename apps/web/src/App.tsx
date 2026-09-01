@@ -83,6 +83,13 @@ export default function App() {
   // instant one arrives whose axId matches what was asked for, so a
   // publisher never sees an extra "now click Hide again" step.
   const [pendingHideAxId, setPendingHideAxId] = useState<string | null>(null);
+  // Same idea as pendingHideAxId, but for "Add context" — there's nothing
+  // to auto-apply (a note needs typed text), so this just focuses the
+  // Inspector's textarea once the real Selection arrives, rather than
+  // leaving the publisher to notice and click into it themselves after
+  // already saying they wanted to type one.
+  const [pendingContextAxId, setPendingContextAxId] = useState<string | null>(null);
+  const [contextFocusToken, setContextFocusToken] = useState(0);
   const isDirty = serializeModifications(modifications) !== serializeModifications(savedModifications);
 
   const handleHide = useCallback((target: Selection) => {
@@ -99,6 +106,13 @@ export default function App() {
       setPendingHideAxId((pending) => {
         if (pending === next.axId) {
           handleHide(next);
+          return null;
+        }
+        return pending;
+      });
+      setPendingContextAxId((pending) => {
+        if (pending === next.axId) {
+          setContextFocusToken((t) => t + 1);
           return null;
         }
         return pending;
@@ -129,6 +143,14 @@ export default function App() {
   const handleHideBlock = useCallback(
     (axId: string) => {
       setPendingHideAxId(axId);
+      handleLocateBlock(axId);
+    },
+    [handleLocateBlock],
+  );
+
+  const handleAddContextBlock = useCallback(
+    (axId: string) => {
+      setPendingContextAxId(axId);
       handleLocateBlock(axId);
     },
     [handleLocateBlock],
@@ -363,6 +385,7 @@ export default function App() {
                 view={view}
                 onLocateBlock={handleLocateBlock}
                 onHideBlock={handleHideBlock}
+                onAddContextBlock={handleAddContextBlock}
                 onRemoveModification={handleRemove}
               />
             </div>
@@ -428,6 +451,7 @@ export default function App() {
                     onRemove={handleRemove}
                     onSetContext={handleSetContext}
                     onForwardLink={handleForwardLink}
+                    focusContextRequest={contextFocusToken}
                   />
                   <ReviewPanel
                     entries={buildReviewEntries(
