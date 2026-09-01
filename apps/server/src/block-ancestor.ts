@@ -87,12 +87,19 @@ export function nearestBlockAncestor(element: Element): Element {
  * shared by every kind of appended content (a context note, forwarded
  * link content), which all follow the same rule and the same edge case:
  * never nested inside the block that would swallow it (nearestBlockAncestor
- * above), and never duplicated when the same target is re-applied — a
- * prior node carrying markerAttr in the insertion slot is removed first.
+ * above), and never duplicated when the same target is re-applied.
  * document.body itself has no meaningful "next sibling" (its parent is
  * <html>), so it's the one anchor that gets a child instead of a sibling;
  * that's the fallback nearestBlockAncestor returns when nothing
  * block-level exists above the target at all.
+ *
+ * Two different modifications can share the same nearest block ancestor —
+ * two links annotated inside one paragraph, say — so "re-applied" is
+ * judged by the built node's own data-ax-id (derived from the *target*,
+ * ax-id.ts), not by whatever merely happens to sit in the insertion slot:
+ * checking only "does the next sibling carry markerAttr" would delete a
+ * sibling modification's note the instant a second one lands at the same
+ * anchor, since both use the same markerAttr.
  */
 export function insertBesideBlockAncestor(
   document: Document,
@@ -102,13 +109,19 @@ export function insertBesideBlockAncestor(
 ): void {
   const anchor = nearestBlockAncestor(target);
   const isBodyAnchor = anchor === document.body;
-
-  const existing = isBodyAnchor ? anchor.lastElementChild : anchor.nextElementSibling;
-  if (existing?.hasAttribute(markerAttr)) {
-    existing.remove();
-  }
-
   const node = buildNode();
+  const nodeAxId = node.getAttribute("data-ax-id");
+
+  const siblings = isBodyAnchor
+    ? Array.from(anchor.children)
+    : anchor.parentElement
+      ? Array.from(anchor.parentElement.children)
+      : [];
+  const priorInsertion = siblings.find(
+    (sib) => sib.hasAttribute(markerAttr) && sib.getAttribute("data-ax-id") === nodeAxId,
+  );
+  priorInsertion?.remove();
+
   if (isBodyAnchor) {
     anchor.appendChild(node);
   } else {

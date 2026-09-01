@@ -219,6 +219,32 @@ describe("applyModifications: context", () => {
     expect(notes).toHaveLength(1);
     expect(notes[0].textContent).toBe("Final version");
   });
+
+  it("keeps both notes when two different targets share the same nearest block ancestor", () => {
+    // Reproduces a real bug: two links annotated inside the same paragraph
+    // both resolve to that paragraph as their nearest block ancestor. The
+    // upsert logic used to key off "does markerAttr sit right after the
+    // anchor" alone, so the second note's insertion saw the first note
+    // already there, mistook it for a stale copy of itself, and deleted
+    // it — one context note silently overwriting the other, even though
+    // both modifications reported "applied".
+    const document = documentFrom(
+      "<body><p data-ax-id='ax-1'>See <a data-ax-id='ax-2'>first</a> and <a data-ax-id='ax-3'>second</a>.</p></body>",
+    );
+    const [firstLink, secondLink] = Array.from(document.querySelectorAll("a"));
+    const modifications: Modification[] = [
+      { id: "m1", type: "context", target: buildLocator(firstLink), value: { text: "About the first link" } },
+      { id: "m2", type: "context", target: buildLocator(secondLink), value: { text: "About the second link" } },
+    ];
+
+    applyModifications(document, modifications);
+
+    const notes = Array.from(document.querySelectorAll("[data-ax-context]"));
+    expect(notes).toHaveLength(2);
+    expect(notes.map((n) => n.textContent)).toEqual(
+      expect.arrayContaining(["About the first link", "About the second link"]),
+    );
+  });
 });
 
 describe("applyModifications: context targets the nearest block ancestor", () => {
