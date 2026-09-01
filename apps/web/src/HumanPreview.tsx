@@ -47,6 +47,14 @@ export interface MarkPayloadEntry {
   id: string;
   type: Modification["type"];
   target: Locator;
+  // True when another modification targets this exact same locator path
+  // — a context note and a forwarded link on the same selection, say,
+  // which the Inspector explicitly allows at once. A single CSS outline
+  // can't show two colors on one element, so the overlay needs to know
+  // to fall back to a combined "multiple" style rather than let the
+  // second mark silently overwrite the first with no sign anything else
+  // is there.
+  sharedElement: boolean;
 }
 
 /**
@@ -57,7 +65,17 @@ export interface MarkPayloadEntry {
  * iframe at all when a colored outline is all that's rendered there.
  */
 export function buildMarkPayload(modifications: Modification[]): MarkPayloadEntry[] {
-  return modifications.map((m) => ({ id: m.id, type: m.type, target: m.target }));
+  const countByPath = new Map<string, number>();
+  for (const m of modifications) {
+    countByPath.set(m.target.path, (countByPath.get(m.target.path) ?? 0) + 1);
+  }
+
+  return modifications.map((m) => ({
+    id: m.id,
+    type: m.type,
+    target: m.target,
+    sharedElement: (countByPath.get(m.target.path) ?? 0) > 1,
+  }));
 }
 
 /**

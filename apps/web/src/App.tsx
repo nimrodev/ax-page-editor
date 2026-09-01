@@ -7,6 +7,7 @@ import { Inspector } from "./Inspector";
 import { AgentPayloadView } from "./AgentPayloadView";
 import { relativeTime } from "./relative-time";
 import { buildReviewEntries, ReviewPanel } from "./ReviewPanel";
+import { MODIFICATION_MARK_COLORS, SHARED_ELEMENT_MARK_COLOR } from "./iframe-overlay";
 
 type LoadState =
   | { status: "idle" }
@@ -338,23 +339,30 @@ export default function App() {
                     <span className="flex items-center gap-1.5">
                       <span
                         className="inline-block h-3 w-3 rounded-sm border-2 border-dashed"
-                        style={{ borderColor: "#94a3b8" }}
+                        style={{ borderColor: MODIFICATION_MARK_COLORS.hide }}
                       />
                       Hidden from agents
                     </span>
                     <span className="flex items-center gap-1.5">
                       <span
                         className="inline-block h-3 w-3 rounded-sm border-2 border-dashed"
-                        style={{ borderColor: "#3b82f6" }}
+                        style={{ borderColor: MODIFICATION_MARK_COLORS.context }}
                       />
                       Context note
                     </span>
                     <span className="flex items-center gap-1.5">
                       <span
                         className="inline-block h-3 w-3 rounded-sm border-2 border-dashed"
-                        style={{ borderColor: "#6366f1" }}
+                        style={{ borderColor: MODIFICATION_MARK_COLORS.forwardLink }}
                       />
                       Forwarded link
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span
+                        className="inline-block h-3 w-3 rounded-sm border-2"
+                        style={{ borderColor: SHARED_ELEMENT_MARK_COLOR }}
+                      />
+                      Multiple modifications
                     </span>
                   </div>
                   <HumanPreview

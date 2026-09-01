@@ -15,6 +15,23 @@
  * the server re-verifies this same fingerprint against whatever it gets
  * back, rather than trusting a positional id from this render.
  */
+// One color per modification type (NIM-57), and the single source both
+// this overlay and the legend in App.tsx draw from — previously each
+// defined its own copy of the same three hex values, which a reviewer
+// flagged as exactly the kind of duplication that silently drifts once a
+// fourth modification type exists.
+export const MODIFICATION_MARK_COLORS: Record<"hide" | "context" | "forwardLink", string> = {
+  hide: "#94a3b8",
+  context: "#3b82f6",
+  forwardLink: "#6366f1",
+};
+
+// A solid, neutral color for an element carrying more than one
+// modification — a single CSS outline can't show two type colors at
+// once, so this replaces both rather than picking one arbitrarily and
+// silently hiding the other.
+export const SHARED_ELEMENT_MARK_COLOR = "#0f172a";
+
 export const IFRAME_OVERLAY_SCRIPT = `
 <script>
 (function () {
@@ -123,18 +140,26 @@ export const IFRAME_OVERLAY_SCRIPT = `
     return candidate;
   }
 
-  // One outline color per modification type (NIM-57) — dashed, always,
-  // so it reads as "marked" rather than "selected" (the click/reveal
-  // highlight above is solid). An outline rather than a border or an
-  // overlay div: it never participates in layout (no reflow, no risk of
-  // shifting inline text) and never sits on top of the element it marks,
-  // so it can never block a click on the content underneath — a real
-  // constraint here, not just a style preference.
+  // One outline color per modification type (NIM-57) — dashed, so it
+  // reads as "marked" rather than "selected" (the click/reveal highlight
+  // above is solid), except when an element carries more than one
+  // modification at once (SHARED_ELEMENT_OUTLINE below): a single CSS
+  // outline can only ever show one color, so a second color silently
+  // replacing the first would hide that anything is there at all. An
+  // outline rather than a border or an overlay div: it never
+  // participates in layout (no reflow, no risk of shifting inline text)
+  // and never sits on top of the element it marks, so it can never block
+  // a click on the content underneath — a real constraint here, not
+  // just a style preference.
   var MARK_OUTLINE = {
-    hide: "2px dashed #94a3b8",
-    context: "2px dashed #3b82f6",
-    forwardLink: "2px dashed #6366f1",
+    hide: "2px dashed ${MODIFICATION_MARK_COLORS.hide}",
+    context: "2px dashed ${MODIFICATION_MARK_COLORS.context}",
+    forwardLink: "2px dashed ${MODIFICATION_MARK_COLORS.forwardLink}",
   };
+  // Solid, not dashed — a visibly different pattern from any single-type
+  // mark, so "this element has more than one modification" reads as its
+  // own state rather than a slightly-off version of one of the three.
+  var SHARED_ELEMENT_OUTLINE = "3px solid ${SHARED_ELEMENT_MARK_COLOR}";
   var marked = {}; // modificationId -> element currently marked for it
 
   function clearMark(el) {
@@ -162,11 +187,11 @@ export const IFRAME_OVERLAY_SCRIPT = `
     modifications.forEach(function (modification) {
       var el = resolveLocator(modification.target);
       if (!el) return;
-      var outline = MARK_OUTLINE[modification.type];
+      var outline = modification.sharedElement ? SHARED_ELEMENT_OUTLINE : MARK_OUTLINE[modification.type];
       if (!outline) return;
       el.style.setProperty("outline", outline, "important");
       el.style.setProperty("outline-offset", "2px", "important");
-      el.setAttribute("data-ax-mark", modification.type);
+      el.setAttribute("data-ax-mark", modification.sharedElement ? "multiple" : modification.type);
       marked[modification.id] = el;
     });
   }
