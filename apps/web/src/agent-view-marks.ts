@@ -14,8 +14,14 @@ export interface HtmlSegment {
 // Matches an opening tag carrying data-ax-context or data-ax-forward
 // anywhere among its attributes, regardless of attribute order — the
 // server sets its own marker attribute first and data-ax-id after, but
-// nothing here should depend on that staying true.
-const MARKER_TAG = /<([a-zA-Z][a-zA-Z0-9]*)\b[^>]*\bdata-ax-(context|forward)\b[^>]*>/g;
+// nothing here should depend on that staying true. The attribute-scanning
+// groups — (?:[^>"']|"[^"]*"|'[^']*')* — deliberately don't stop at a
+// bare ">": data-ax-mod-id's value is a CSS path locator (e.g.
+// "context:html>body>div"), which contains literal ">" characters inside
+// its own quotes. A naive [^>]* stops at the first one, silently
+// truncating the match before data-ax-id (set last) and losing it.
+const ATTRS = `(?:[^>"']|"[^"]*"|'[^']*')*`;
+const MARKER_TAG = new RegExp(`<([a-zA-Z][a-zA-Z0-9]*)\\b${ATTRS}\\bdata-ax-(context|forward)\\b${ATTRS}>`, "g");
 const AX_ID_ATTR = /data-ax-id="([^"]*)"/;
 
 /**

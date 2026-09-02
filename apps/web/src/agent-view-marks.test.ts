@@ -57,6 +57,21 @@ describe("splitHtmlByMarkers", () => {
     });
   });
 
+  // Reproduces a real bug: data-ax-mod-id's value is a CSS path locator
+  // (e.g. "context:html>body>div"), which contains literal ">" characters
+  // inside the quoted attribute. The opening-tag scan must not stop at
+  // those — doing so truncates the match before data-ax-id (set last),
+  // silently dropping axId to undefined and breaking every "jump to this
+  // change" click for that block in the HTML tab.
+  it("finds data-ax-id past a data-ax-mod-id value that itself contains '>'", () => {
+    const html =
+      '<span data-ax-context="" data-ax-mod-id="context:html>body>div" data-ax-id="ax-5-context">Note</span>';
+
+    const segments = splitHtmlByMarkers(html);
+
+    expect(segments[0].axId).toBe("ax-5-context");
+  });
+
   it("handles multiple markers in the same document", () => {
     const html =
       '<span data-ax-context="" data-ax-id="a">X</span><div data-ax-forward="" data-ax-id="b"><p>Y</p></div>';
