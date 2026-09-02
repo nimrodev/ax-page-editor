@@ -4,7 +4,7 @@
 
 /* Jump-to-change navigator (NIM-63): briefly draws the eye to a block that
    was just scrolled into view, in that block's own accent color (blue for
-   a context note, indigo for forwarded content) rather than a third,
+   a context note, green for forwarded content) rather than a third,
    unrelated highlight color. */
 @keyframes ax-jump-flash {
   0%, 100% {

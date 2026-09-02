@@ -23,7 +23,7 @@
 export const MODIFICATION_MARK_COLORS: Record<"hide" | "context" | "forwardLink", string> = {
   hide: "#94a3b8",
   context: "#3b82f6",
-  forwardLink: "#6366f1",
+  forwardLink: "#16a34a",
 };
 
 // A solid, neutral color for an element carrying more than one
@@ -36,7 +36,11 @@ export const IFRAME_OVERLAY_SCRIPT = `
 <script>
 (function () {
   var HIGHLIGHT_OUTLINE = "2px solid #2563eb";
-  var selected = null;
+  // NIM-56: a plain array, not a single element — a modifier click adds
+  // or removes one element from the selection rather than always
+  // replacing it. Order doesn't carry meaning; it's just whatever order
+  // elements were added in.
+  var selected = [];
   var TEXT_HINT_MAX_LENGTH = 120;
 
   function normalizeText(text) {

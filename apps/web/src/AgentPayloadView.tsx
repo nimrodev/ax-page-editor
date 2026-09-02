@@ -25,8 +25,10 @@ interface SourceStyle {
 
 // One definition per modification type drives both the static marking and
 // the jump navigator's flash color — a context note and forwarded content
-// each get a distinct accent, reusing the same blue/indigo language as the
-// Inspector's own badges rather than inventing a third palette.
+// each get a distinct accent, reusing the same blue/green language as the
+// Inspector's own badges rather than inventing a third palette. Green, not
+// indigo, for forwarded content: indigo sat too close to blue to tell the
+// two marks apart at a glance.
 const SOURCE_STYLES: Record<MarkdownBlock["source"], SourceStyle> = {
   page: { wrapperClass: "", label: null, labelClass: "", flashColor: "" },
   context: {
@@ -36,16 +38,16 @@ const SOURCE_STYLES: Record<MarkdownBlock["source"], SourceStyle> = {
     flashColor: "rgba(59, 130, 246, 0.7)", // blue-500
   },
   forwarded: {
-    wrapperClass: "border-l-4 border-indigo-300 bg-indigo-50 pl-3",
+    wrapperClass: "border-l-4 border-green-300 bg-green-50 pl-3",
     label: "Forwarded content",
-    labelClass: "bg-indigo-100 text-indigo-700",
-    flashColor: "rgba(99, 102, 241, 0.7)", // indigo-500
+    labelClass: "bg-green-100 text-green-700",
+    flashColor: "rgba(22, 163, 74, 0.7)", // green-600
   },
 };
 
 const MARK_CLASS: Record<MarkerKind, string> = {
   context: "rounded bg-blue-100 text-blue-900",
-  forwarded: "rounded bg-indigo-100 text-indigo-900",
+  forwarded: "rounded bg-green-100 text-green-900",
 };
 
 const HINT_DISMISSED_KEY = "ax-block-hint-dismissed";
