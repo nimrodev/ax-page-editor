@@ -284,11 +284,11 @@ export function AgentPayloadView({
           bottom-right expanded) since the two states now cross-fade
           rather than swap — a wrapper here with any transform would
           create a containing block that hijacks its fixed children's
-          positioning. The Top button sits just above it: right above the
-          collapsed pill's own mid-right position while collapsed, and
-          hidden while expanded — the panel already scrolls its own list,
-          and stacking Top above a panel whose height varies with content
-          has no stable anchor to sit flush against. */}
+          positioning. The Top button sits just above it in either state:
+          above the collapsed pill's mid-right position, or above the
+          expanded panel's own bottom-6 anchor plus its max-h-[50vh] cap
+          — a fixed worst-case offset, so it never overlaps even though
+          the panel's actual height varies with content. */}
       <ModificationNavigator
         entries={entries}
         expanded={expanded}
@@ -301,11 +301,11 @@ export function AgentPayloadView({
         suggestResume={suggestResume}
         onResume={resumeToActive}
       />
-      {showScrollTop && !expanded && (
+      {showScrollTop && (
         <button
           onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
           aria-label="Scroll to top"
-          className="fixed top-1/2 right-6 flex -translate-y-24 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 shadow-lg hover:bg-slate-50"
+          className={`fixed right-6 flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 shadow-lg transition-all duration-300 ease-out hover:bg-slate-50 ${expanded ? "bottom-[calc(50vh+2rem)]" : "top-1/2 -translate-y-24"}`}
         >
           ↑ Top
         </button>
