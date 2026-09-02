@@ -79,3 +79,40 @@ export async function loadConfiguration(url: string): Promise<Configuration | nu
     return null;
   }
 }
+
+// Mirrors DevMutation in apps/server/src/dev-mutation.ts — this is
+// dev-only demo tooling (NIM-54), not part of the product's own data
+// model, so it isn't worth a shared @ax/schema entry the way Modification
+// and Locator are.
+export type DevMutation =
+  | { type: "move"; selector: string; toParentSelector: string; toIndex?: number }
+  | { type: "edit"; selector: string; text: string }
+  | { type: "insert"; parentSelector: string; html: string; atIndex?: number }
+  | { type: "delete"; selector: string };
+
+/**
+ * Whether this server instance is running against the fixture-backed demo
+ * pages (AX_USE_FIXTURES) — the dev mutation control only works there, so
+ * the app checks this once rather than offering a control that 403s the
+ * moment it's used against the real network. Fails closed (false) on any
+ * error, same reasoning as loadConfiguration above: a broken check should
+ * hide a dev tool, not break the page.
+ */
+export async function fetchDevToolsEnabled(): Promise<boolean> {
+  try {
+    const res = await fetch("/api/dev/enabled");
+    if (!res.ok) return false;
+    const body: { enabled: boolean } = await res.json();
+    return body.enabled;
+  } catch {
+    return false;
+  }
+}
+
+export function devMutate(url: string, mutations: DevMutation[]): Promise<{ ok: true }> {
+  return post("/api/dev/mutate", { url, mutations });
+}
+
+export function devReset(url: string): Promise<{ ok: true }> {
+  return post("/api/dev/reset", { url });
+}

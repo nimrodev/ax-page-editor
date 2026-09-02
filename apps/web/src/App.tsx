@@ -1,6 +1,16 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Locator, Modification } from "@ax/schema";
-import { AgentPayload, RenderFailure, loadConfiguration, renderPage, saveConfiguration } from "./api";
+import {
+  AgentPayload,
+  DevMutation,
+  RenderFailure,
+  devMutate,
+  devReset,
+  fetchDevToolsEnabled,
+  loadConfiguration,
+  renderPage,
+  saveConfiguration,
+} from "./api";
 import { failureMessage } from "./failure-messages";
 import { HumanPreview, Selection } from "./HumanPreview";
 import { Inspector } from "./Inspector";
@@ -90,6 +100,20 @@ export default function App() {
   // already saying they wanted to type one.
   const [pendingContextAxId, setPendingContextAxId] = useState<string | null>(null);
   const [contextFocusToken, setContextFocusToken] = useState(0);
+  // NIM-54's demo tool: only meaningful against the fixture-backed demo
+  // pages, so the panel checks once whether this server instance is
+  // running with AX_USE_FIXTURES rather than offering a control that
+  // would just 403 against the real network.
+  const [devToolsEnabled, setDevToolsEnabled] = useState(false);
+  // Bumped after every dev mutation/reset — included in the re-render
+  // effect below and used as HumanPreview's key, since a mutation changes
+  // the page out from under the app without touching `url` or
+  // `modifications`, neither of which would otherwise notice.
+  const [devRefreshToken, setDevRefreshToken] = useState(0);
+
+  useEffect(() => {
+    fetchDevToolsEnabled().then(setDevToolsEnabled);
+  }, []);
   const isDirty = serializeModifications(modifications) !== serializeModifications(savedModifications);
 
   const handleHide = useCallback((target: Selection) => {
@@ -275,7 +299,25 @@ export default function App() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [readyUrl, modifications]);
+  }, [readyUrl, modifications, devRefreshToken]);
+
+  // NIM-54's demo control: mutates the loaded page's fixture in place on
+  // the server, then forces a full refresh — bumping devRefreshToken
+  // re-triggers the render effect above (for the Agent view) and remounts
+  // HumanPreview via its key (for the Human view iframe, whose own fetch
+  // effect only reacts to `url` changing).
+  const handleDevMutate = useCallback(
+    (mutation: DevMutation) => {
+      if (state.status !== "ready") return;
+      devMutate(state.url, [mutation]).then(() => setDevRefreshToken((t) => t + 1));
+    },
+    [state],
+  );
+
+  const handleDevReset = useCallback(() => {
+    if (state.status !== "ready") return;
+    devReset(state.url).then(() => setDevRefreshToken((t) => t + 1));
+  }, [state]);
 
   function selectView(next: "agent" | "human") {
     setView(next);
@@ -341,6 +383,47 @@ export default function App() {
 
         {state.status === "ready" && (
           <div>
+            {devToolsEnabled && (
+              <div className="mb-3 flex flex-wrap items-center gap-2 rounded border border-dashed border-purple-300 bg-purple-50 px-3 py-2 text-xs text-purple-900">
+                <span className="font-semibold uppercase tracking-wide">Dev: mutate this page</span>
+                <button
+                  onClick={() => handleDevMutate({ type: "edit", selector: "h1", text: "Mutated heading (dev)" })}
+                  className="rounded border border-purple-300 bg-white px-2 py-1 hover:bg-purple-100"
+                >
+                  Edit heading
+                </button>
+                <button
+                  onClick={() =>
+                    handleDevMutate({ type: "move", selector: "h1", toParentSelector: "body", toIndex: 0 })
+                  }
+                  className="rounded border border-purple-300 bg-white px-2 py-1 hover:bg-purple-100"
+                >
+                  Move heading
+                </button>
+                <button
+                  onClick={() =>
+                    handleDevMutate({
+                      type: "insert",
+                      parentSelector: "body",
+                      html: "<p>Inserted by dev tools</p>",
+                      atIndex: 0,
+                    })
+                  }
+                  className="rounded border border-purple-300 bg-white px-2 py-1 hover:bg-purple-100"
+                >
+                  Insert paragraph
+                </button>
+                <button
+                  onClick={() => handleDevMutate({ type: "delete", selector: "img" })}
+                  className="rounded border border-purple-300 bg-white px-2 py-1 hover:bg-purple-100"
+                >
+                  Delete first image
+                </button>
+                <button onClick={handleDevReset} className="ml-auto rounded px-2 py-1 font-medium underline">
+                  Reset page
+                </button>
+              </div>
+            )}
             {loadedInfo && (
               <div className="mb-3 flex items-center justify-between rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
                 <span>
@@ -444,6 +527,7 @@ export default function App() {
                     </span>
                   </div>
                   <HumanPreview
+                    key={devRefreshToken}
                     url={state.url}
                     onSelect={handleSelect}
                     revealRequest={revealRequest}
