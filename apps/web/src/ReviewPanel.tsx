@@ -31,6 +31,30 @@ export function buildReviewEntries(modifications: Modification[], statuses: Modi
   });
 }
 
+export interface ResolutionSummary {
+  unresolvedCount: number;
+  total: number;
+  broadFailure: boolean;
+}
+
+// A single stray unresolved locator is still just that row's own
+// "Unresolved" badge — this is specifically for the case the acceptance
+// criteria calls out: "a large share of locators fail at once", e.g. a
+// saved configuration pointed at a page that changed shape entirely, or
+// the wrong page. Both a minimum count and a ratio guard the threshold:
+// count alone would flag a lone unresolved item in a 1-modification
+// configuration as "broad"; ratio alone would flag 1 of 2 as broad.
+const BROAD_FAILURE_MIN_COUNT = 2;
+const BROAD_FAILURE_RATIO = 0.5;
+
+export function buildResolutionSummary(entries: { status: ModificationStatus["status"] }[]): ResolutionSummary {
+  const total = entries.length;
+  const unresolvedCount = entries.filter((e) => e.status === "unresolved").length;
+  const broadFailure =
+    total > 0 && unresolvedCount >= BROAD_FAILURE_MIN_COUNT && unresolvedCount / total >= BROAD_FAILURE_RATIO;
+  return { unresolvedCount, total, broadFailure };
+}
+
 interface ReviewPanelProps {
   entries: ReviewEntry[];
   onReveal: (modification: Modification) => void;
@@ -44,9 +68,16 @@ interface ReviewPanelProps {
  * label logic so a "context note" reads the same way in both places.
  */
 export function ReviewPanel({ entries, onReveal, onRemove }: ReviewPanelProps) {
+  const { unresolvedCount, broadFailure } = buildResolutionSummary(entries);
   return (
     <div className="w-96 shrink-0 rounded border border-slate-200 bg-white p-4">
       <h2 className="text-sm font-semibold text-slate-700">Modifications ({entries.length})</h2>
+      {broadFailure && (
+        <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-900">
+          {unresolvedCount} of {entries.length} modifications couldn't be matched to this page — it may have
+          changed significantly, or this configuration may belong to a different page.
+        </p>
+      )}
       {entries.length === 0 ? (
         <p className="mt-3 text-sm text-slate-400">No modifications on this page yet.</p>
       ) : (
@@ -54,7 +85,10 @@ export function ReviewPanel({ entries, onReveal, onRemove }: ReviewPanelProps) {
           {entries.map((entry) => {
             const meta = TYPE_META[entry.modification.type];
             const shadowed = entry.status === "shadowed";
-            const unresolved = entry.status === "unresolved";
+            // Once the page-level message above covers it, each row's own
+            // "Unresolved" badge would just repeat the same fact 30 times
+            // — exactly what the acceptance criteria asks to avoid.
+            const unresolved = entry.status === "unresolved" && !broadFailure;
             return (
               <li
                 key={entry.modification.id}
