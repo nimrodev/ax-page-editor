@@ -287,17 +287,7 @@ export function AgentPayloadView({
           a short one. Flowing them through normal layout means the Top
           button always sits flush against whatever height the navigator
           actually renders at. */}
-      <div className="fixed bottom-6 right-6 flex flex-col items-end gap-2">
-        {showScrollTop && (
-          <button
-            onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-            aria-label="Scroll to top"
-            className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 shadow-lg hover:bg-slate-50"
-          >
-            ↑ Top
-          </button>
-        )}
-
+      <div className="fixed top-1/2 right-6 flex -translate-y-1/2 flex-col items-end gap-2">
         <ModificationNavigator
           entries={entries}
           expanded={expanded}
@@ -310,6 +300,15 @@ export function AgentPayloadView({
           suggestResume={suggestResume}
           onResume={resumeToActive}
         />
+        {showScrollTop && (
+          <button
+            onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+            aria-label="Scroll to top"
+            className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 shadow-lg hover:bg-slate-50"
+          >
+            ↑ Top
+          </button>
+        )}
       </div>
     </div>
   );

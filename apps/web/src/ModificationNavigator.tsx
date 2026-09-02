@@ -154,26 +154,23 @@ export function ModificationNavigator({
   if (!expanded) {
     return (
       <div
-        className={`flex items-center gap-2 rounded-full border bg-white px-3 py-1.5 text-sm shadow-lg ${suggestResume ? "border-blue-300 ring-2 ring-blue-100" : "border-slate-200"}`}
+        className={`flex items-center gap-2 rounded-full border bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white shadow-xl ${suggestResume ? "border-blue-400 ring-2 ring-blue-400/40" : "border-slate-900"}`}
       >
         {jumpCount > 0 ? (
           <>
             <button
               onClick={() => onJumpDelta(-1)}
               aria-label="Previous change"
-              className="rounded px-1.5 text-slate-600 hover:bg-slate-100"
+              className="rounded px-1.5 text-slate-300 hover:bg-white/10"
             >
               ‹
             </button>
             {suggestResume ? (
-              <button
-                onClick={onResume}
-                className="font-medium text-blue-600 hover:underline"
-              >
+              <button onClick={onResume} className="text-blue-300 hover:underline">
                 Resume at {jumpIndex + 1} of {jumpCount}
               </button>
             ) : (
-              <span className="tabular-nums text-slate-600">
+              <span className="tabular-nums">
                 {jumpIndex + 1} of {jumpCount} {jumpCount === 1 ? "change" : "changes"}
                 {/* Hides never appear here — there's nothing to scroll to —
                     but staying silent about them would make this pill look
@@ -184,20 +181,20 @@ export function ModificationNavigator({
             <button
               onClick={() => onJumpDelta(1)}
               aria-label="Next change"
-              className="rounded px-1.5 text-slate-600 hover:bg-slate-100"
+              className="rounded px-1.5 text-slate-300 hover:bg-white/10"
             >
               ›
             </button>
           </>
         ) : (
-          <span className="text-slate-600">
+          <span>
             {entries.length} {entries.length === 1 ? "modification" : "modifications"}
           </span>
         )}
         <button
           onClick={() => onToggleExpanded(true)}
           aria-label="Show all modifications"
-          className="rounded px-1 text-slate-500 hover:bg-slate-100"
+          className="rounded px-1 text-slate-300 hover:bg-white/10"
         >
           ▲
         </button>

@@ -62,12 +62,11 @@ export default function App() {
   const [url, setUrl] = useState("");
   const [state, setState] = useState<LoadState>({ status: "idle" });
   const [format, setFormat] = useState<"markdown" | "html">("markdown");
-  const [view, setView] = useState<"agent" | "human">("agent");
-  // Switching to Human view (a click, a Review panel reveal, or the dev
-  // panel's auto-reveal) updates content that can be well below the
-  // current scroll position — without this, "look, it changed" happens
-  // entirely off-screen and reads as "nothing happened" (reported live:
-  // "I still not seeing nothing changed in the preview page").
+  const [view, setView] = useState<"agent" | "human">("human");
+  // Switching to Human view (a click, or a Review panel reveal) updates
+  // content that can be well below the current scroll position — without
+  // this, "look, it changed" happens entirely off-screen and reads as
+  // "nothing happened".
   const humanViewRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (view === "human") humanViewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -210,8 +209,8 @@ export default function App() {
 
     const submittedUrl = url.trim();
     setState({ status: "loading" });
-    setView("agent");
-    setHumanViewRequested(false);
+    setView("human");
+    setHumanViewRequested(true);
     setSelection(null);
     setModifications([]);
     setSavedModifications([]);
