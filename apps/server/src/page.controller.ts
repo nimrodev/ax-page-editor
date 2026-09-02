@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpException, HttpStatus, Post } from "@nestjs/common";
+import { Body, Controller, HttpException, HttpStatus, Post } from "@nestjs/common";
 import { z } from "zod";
 import { ModificationSchema } from "@ax/schema";
 import { ZodValidationPipe } from "./zod-validation.pipe";
@@ -9,7 +9,6 @@ import { FetchBudget } from "./fetch-budget";
 import { FetchFailure } from "./fetcher";
 import { FixtureStore } from "./fixture-store";
 import { ForwardLinkCache } from "./link-forward";
-import { applyDevMutations } from "./dev-mutation";
 
 const UrlRequestSchema = z.object({ url: z.string().url() });
 
@@ -18,28 +17,6 @@ const RenderRequestSchema = UrlRequestSchema.extend({
   // context, and link forwarding land — unapplied until then.
   modifications: z.array(ModificationSchema).optional(),
 });
-
-// Mirrors DevMutation in dev-mutation.ts — kept as a request-boundary
-// schema here rather than in @ax/schema since this is dev-only tooling,
-// not part of the product's own data model the client and server share.
-const DevMutationSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("move"),
-    selector: z.string(),
-    toParentSelector: z.string(),
-    toIndex: z.number().optional(),
-  }),
-  z.object({ type: z.literal("edit"), selector: z.string(), text: z.string() }),
-  z.object({
-    type: z.literal("insert"),
-    parentSelector: z.string(),
-    html: z.string(),
-    atIndex: z.number().optional(),
-  }),
-  z.object({ type: z.literal("delete"), selector: z.string() }),
-]);
-
-const DevMutateRequestSchema = UrlRequestSchema.extend({ mutations: z.array(DevMutationSchema) });
 
 const useFixtures = process.env.AX_USE_FIXTURES === "1" || process.env.AX_USE_FIXTURES === "true";
 
@@ -75,43 +52,6 @@ export class PageController {
         forwardCache: this.forwardCache,
       }),
     );
-  }
-
-  // Lets the client know whether to show the dev mutation control at all
-  // — it only works against the fixture-backed demo pages, so there's no
-  // point offering it when this server instance is pointed at the real
-  // network (AX_USE_FIXTURES unset).
-  @Get("dev/enabled")
-  devEnabled() {
-    return { enabled: useFixtures };
-  }
-
-  // NIM-54's last acceptance criterion: a real page won't change shape on
-  // command, so drift/re-anchor/stale resolution has nothing to
-  // demonstrate against without a way to mutate one deliberately. Applies
-  // only to the fixture store's in-memory copy (FixtureStore.mutate) —
-  // gated behind useFixtures the same way the demo pages themselves are,
-  // since there is no committed fixture for the real network to mutate.
-  @Post("dev/mutate")
-  devMutate(@Body(new ZodValidationPipe(DevMutateRequestSchema)) body: z.infer<typeof DevMutateRequestSchema>) {
-    if (!useFixtures) {
-      throw new HttpException("Dev mutation is only available with fixtures enabled", HttpStatus.FORBIDDEN);
-    }
-    try {
-      this.fixtures.mutate(body.url, (document) => applyDevMutations(document, body.mutations));
-    } catch (err) {
-      throw new HttpException((err as Error).message, HttpStatus.BAD_REQUEST);
-    }
-    return { ok: true };
-  }
-
-  @Post("dev/reset")
-  devReset(@Body(new ZodValidationPipe(UrlRequestSchema)) body: z.infer<typeof UrlRequestSchema>) {
-    if (!useFixtures) {
-      throw new HttpException("Dev mutation is only available with fixtures enabled", HttpStatus.FORBIDDEN);
-    }
-    this.fixtures.reset(body.url);
-    return { ok: true };
   }
 
   /** Runs the pipeline call and translates a FetchFailure into an HTTP response; not just error handling, the actual execution too. */

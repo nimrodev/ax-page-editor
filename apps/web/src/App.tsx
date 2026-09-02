@@ -1,23 +1,12 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Locator, Modification } from "@ax/schema";
-import {
-  AgentPayload,
-  DevMutation,
-  RenderFailure,
-  devMutate,
-  devReset,
-  fetchDevToolsEnabled,
-  loadConfiguration,
-  renderPage,
-  saveConfiguration,
-} from "./api";
+import { AgentPayload, RenderFailure, loadConfiguration, renderPage, saveConfiguration } from "./api";
 import { failureMessage } from "./failure-messages";
 import { HumanPreview, Selection } from "./HumanPreview";
 import { Inspector } from "./Inspector";
 import { AgentPayloadView } from "./AgentPayloadView";
 import { relativeTime } from "./relative-time";
 import { buildReviewEntries, ReviewPanel } from "./ReviewPanel";
-import { findTierChanges, summarizeDevMutation } from "./dev-mutation-summary";
 import { MODIFICATION_MARK_COLORS, SHARED_ELEMENT_MARK_COLOR } from "./iframe-overlay";
 
 type LoadState =
@@ -110,35 +99,6 @@ export default function App() {
   // already saying they wanted to type one.
   const [pendingContextAxId, setPendingContextAxId] = useState<string | null>(null);
   const [contextFocusToken, setContextFocusToken] = useState(0);
-  // NIM-54's demo tool: only meaningful against the fixture-backed demo
-  // pages, so the panel checks once whether this server instance is
-  // running with AX_USE_FIXTURES rather than offering a control that
-  // would just 403 against the real network.
-  const [devToolsEnabled, setDevToolsEnabled] = useState(false);
-  // Bumped after every dev mutation/reset — included in the re-render
-  // effect below and used as HumanPreview's key, since a mutation changes
-  // the page out from under the app without touching `url` or
-  // `modifications`, neither of which would otherwise notice.
-  const [devRefreshToken, setDevRefreshToken] = useState(0);
-  // Surfaces exactly why a mutate/reset call did nothing — e.g. "No
-  // fixture for <url>" when the loaded page isn't one of the three
-  // fixture-backed demo pages — rather than the button silently doing
-  // nothing, which is indistinguishable from it being broken.
-  const [devError, setDevError] = useState<string | null>(null);
-  // What actually happened, in plain language — the direct fix for "I
-  // clicked it and can't tell if anything happened": one line per
-  // modification whose resolveLocator tier moved (or an explicit "nothing
-  // reacted" / "nothing to react yet"), computed by diffing this render's
-  // modificationStatuses against the one from just before the mutation.
-  const [devSummary, setDevSummary] = useState<string[]>([]);
-  // True for the duration of one mutate/reset round-trip — disables the
-  // panel's buttons so a second click can't race the first (see
-  // applyDevChange).
-  const [devBusy, setDevBusy] = useState(false);
-
-  useEffect(() => {
-    fetchDevToolsEnabled().then(setDevToolsEnabled);
-  }, []);
   const isDirty = serializeModifications(modifications) !== serializeModifications(savedModifications);
 
   const handleHide = useCallback((target: Selection) => {
@@ -257,8 +217,6 @@ export default function App() {
     setSavedModifications([]);
     setLoadedInfo(null);
     setSaveStatus("idle");
-    setDevError(null);
-    setDevSummary([]);
     try {
       const payload = await renderPage(submittedUrl);
       setState({ status: "ready", url: submittedUrl, payload });
@@ -326,63 +284,7 @@ export default function App() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [readyUrl, modifications, devRefreshToken]);
-
-  // NIM-54's demo control: mutates the loaded page's fixture in place on
-  // the server, then re-renders directly (rather than only bumping
-  // devRefreshToken and waiting for the effect above) so the fresh
-  // modificationStatuses are in hand immediately, for diffing against
-  // what they were just before the mutation — that diff is what actually
-  // answers "what just happened" instead of leaving the publisher to
-  // notice a badge changed somewhere on their own. devRefreshToken is
-  // still bumped too, to remount HumanPreview (its own fetch effect only
-  // reacts to `url` changing, which a mutation never does).
-  const applyDevChange = useCallback(
-    (action: () => Promise<void>, failureMessage: string) => {
-      // Guards against two dev actions overlapping — each one is two
-      // sequential network round-trips (mutate/reset, then a render to
-      // pick up fresh modificationStatuses), so a second click before the
-      // first finishes would race it: whichever response lands last wins
-      // final state, and the "before" snapshot each captured could
-      // already be stale by the time it's diffed against "after".
-      if (state.status !== "ready" || devBusy) return;
-      setDevError(null);
-      setDevBusy(true);
-      const before = state.payload.modificationStatuses;
-      const url = state.url;
-      action()
-        .then(() => renderPage(url, modifications))
-        .then((payload) => {
-          setState({ status: "ready", url, payload });
-          setDevRefreshToken((t) => t + 1);
-          setDevSummary(summarizeDevMutation(modifications, before, payload.modificationStatuses));
-          // Points the eye at whatever actually reacted, rather than
-          // leaving the publisher to go hunt for a changed badge in the
-          // Review panel themselves (the stakeholder's own "I cannot see
-          // the effect") — reuses the same reveal path a Review panel
-          // click already takes.
-          const [firstChange] = findTierChanges(modifications, before, payload.modificationStatuses);
-          const changedModification = firstChange && modifications.find((m) => m.id === firstChange.modificationId);
-          if (changedModification) handleReveal(changedModification);
-        })
-        .catch((err) => setDevError(err instanceof Error ? err.message : failureMessage))
-        .finally(() => setDevBusy(false));
-    },
-    [state, modifications, handleReveal, devBusy],
-  );
-
-  const handleDevMutate = useCallback(
-    (mutation: DevMutation) => {
-      if (state.status !== "ready") return;
-      applyDevChange(() => devMutate(state.url, [mutation]), "Mutation failed");
-    },
-    [state, applyDevChange],
-  );
-
-  const handleDevReset = useCallback(() => {
-    if (state.status !== "ready") return;
-    applyDevChange(() => devReset(state.url), "Reset failed");
-  }, [state, applyDevChange]);
+  }, [readyUrl, modifications]);
 
   function selectView(next: "agent" | "human") {
     setView(next);
@@ -448,83 +350,6 @@ export default function App() {
 
         {state.status === "ready" && (
           <div>
-            {devToolsEnabled && (
-              <div className="mb-3 rounded border border-dashed border-purple-300 bg-purple-50 px-3 py-2 text-xs text-purple-900">
-                <p className="mb-2">
-                  <span className="font-semibold uppercase tracking-wide">Dev only:</span> this box edits a frozen
-                  copy of the page so you can test whether a hide/context/forward modification survives a real site
-                  changing — the affected modification is highlighted below after each click.
-                </p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    disabled={devBusy}
-                    // Targets the innermost span, not the h1 itself — h1
-                    // wraps its text in nested spans on this fixture, and
-                    // overwriting h1's own textContent destroys that
-                    // nesting, which changes the STRUCTURAL path too (no
-                    // longer h1>span>span) and forces a re-anchor search
-                    // instead of the clean drift (same path, new
-                    // fingerprint) this button is meant to demonstrate.
-                    onClick={() =>
-                      handleDevMutate({ type: "edit", selector: "h1 span span", text: "Mutated heading (dev)" })
-                    }
-                    className="rounded border border-purple-300 bg-white px-2 py-1 hover:bg-purple-100 disabled:opacity-50"
-                  >
-                    Change the heading's text <span className="text-purple-500">(drift)</span>
-                  </button>
-                  <button
-                    disabled={devBusy}
-                    onClick={() =>
-                      handleDevMutate({ type: "move", selector: "h1", toParentSelector: "body", toIndex: 0 })
-                    }
-                    className="rounded border border-purple-300 bg-white px-2 py-1 hover:bg-purple-100 disabled:opacity-50"
-                  >
-                    Move the heading elsewhere <span className="text-purple-500">(re-anchor)</span>
-                  </button>
-                  <button
-                    disabled={devBusy}
-                    onClick={() => handleDevMutate({ type: "delete", selector: "h1" })}
-                    className="rounded border border-purple-300 bg-white px-2 py-1 hover:bg-purple-100 disabled:opacity-50"
-                  >
-                    Delete the heading <span className="text-purple-500">(stale)</span>
-                  </button>
-                  <button
-                    disabled={devBusy}
-                    onClick={() =>
-                      handleDevMutate({
-                        type: "insert",
-                        parentSelector: "body",
-                        html: "<p>Inserted by dev tools</p>",
-                        atIndex: 0,
-                      })
-                    }
-                    className="rounded border border-purple-300 bg-white px-2 py-1 hover:bg-purple-100 disabled:opacity-50"
-                  >
-                    Insert a paragraph <span className="text-purple-500">(unrelated change)</span>
-                  </button>
-                  <button
-                    disabled={devBusy}
-                    onClick={handleDevReset}
-                    className="ml-auto rounded px-2 py-1 font-medium underline disabled:opacity-50"
-                  >
-                    Reset page
-                  </button>
-                </div>
-                {devSummary.length > 0 && (
-                  <ul className="mt-2 space-y-0.5 border-t border-purple-200 pt-2">
-                    {devSummary.map((line, i) => (
-                      <li key={i}>{line}</li>
-                    ))}
-                  </ul>
-                )}
-                {devError && (
-                  <p className="mt-2 border-t border-purple-200 pt-2 text-purple-700">
-                    {devError} — this only works on the fixture-backed demo pages (the Wikipedia LLM article, BBC
-                    News, or Stripe Pricing).
-                  </p>
-                )}
-              </div>
-            )}
             {loadedInfo && (
               <div className="mb-3 flex items-center justify-between rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
                 <span>
@@ -628,7 +453,6 @@ export default function App() {
                     </span>
                   </div>
                   <HumanPreview
-                    key={devRefreshToken}
                     url={state.url}
                     onSelect={handleSelect}
                     revealRequest={revealRequest}

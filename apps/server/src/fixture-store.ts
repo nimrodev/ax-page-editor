@@ -1,6 +1,5 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { JSDOM } from "jsdom";
 
 /**
  * Committed HTML snapshots of the verified demo pages, so evaluation
@@ -28,31 +27,5 @@ export class FixtureStore {
     const html = fs.readFileSync(path.join(this.fixturesDir, filename), "utf-8");
     this.cache.set(url, html);
     return html;
-  }
-
-  /**
-   * NIM-54's dev-only demo tool: mutates a fixture's current HTML in
-   * memory and keeps the result as this store's cached copy for `url`,
-   * so the next `get()` — and so the next render — sees the changed
-   * page. Never touches the committed file on disk; a process restart
-   * (or `reset`) reverts to it. Throws for a URL with no committed
-   * fixture at all, rather than silently caching an ad-hoc page this
-   * store was never meant to serve.
-   */
-  mutate(url: string, transform: (document: Document) => void): string {
-    const html = this.get(url);
-    if (html === undefined) {
-      throw new Error(`No fixture for ${url} — nothing to mutate`);
-    }
-    const dom = new JSDOM(html);
-    transform(dom.window.document);
-    const mutated = dom.window.document.documentElement.outerHTML;
-    this.cache.set(url, mutated);
-    return mutated;
-  }
-
-  /** Discards any mutation for `url`, so the next `get()` re-reads the committed fixture. */
-  reset(url: string): void {
-    this.cache.delete(url);
   }
 }
