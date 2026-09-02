@@ -164,9 +164,6 @@ export function AgentPayloadView({
 
     const el = marksRef.current.get(block.axId);
     if (!el) return;
-    // inline: "center" matters specifically for the HTML tab — its <pre>
-    // holds very long, unwrapped lines, so the default "nearest" can leave
-    // a mark sitting right at the edge of the viewport instead of visible.
     el.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
     flashElement(el, SOURCE_STYLES[block.source].flashColor);
   }
@@ -266,7 +263,7 @@ export function AgentPayloadView({
           })}
         </div>
       ) : (
-        <pre className="overflow-auto rounded border border-slate-200 bg-white p-4 text-xs text-slate-700">
+        <pre className="overflow-auto whitespace-pre-wrap break-all rounded border border-slate-200 bg-white p-4 text-xs text-slate-700">
           {htmlSegments!.map((segment, i) =>
             segment.markerKind ? (
               <mark
