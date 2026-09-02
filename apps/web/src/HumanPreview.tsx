@@ -14,15 +14,19 @@ export interface Selection {
 
 interface AxSelectMessage {
   type: "ax:select";
-  axId: string;
-  tag: string;
-  text: string;
-  href: string | null;
-  locator: Locator;
+  // Always the full current selection, never a delta (NIM-56) — possibly
+  // empty (e.g. after Escape), possibly more than one element for a
+  // modifier-click selection.
+  selections: Selection[];
 }
 
 function isAxSelectMessage(data: unknown): data is AxSelectMessage {
-  return typeof data === "object" && data !== null && (data as { type?: unknown }).type === "ax:select";
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    (data as { type?: unknown }).type === "ax:select" &&
+    Array.isArray((data as { selections?: unknown }).selections)
+  );
 }
 
 // Sent by the overlay only when a locate/reveal resolved to a real
@@ -37,7 +41,11 @@ export function isRevealHiddenMessage(data: unknown): boolean {
 
 interface HumanPreviewProps {
   url: string;
-  onSelect: (selection: Selection) => void;
+  // Always the full current selection (NIM-56) — a modifier click can
+  // grow or shrink it, a plain click replaces it with one element, and
+  // Escape clears it to an empty array; there is no separate "deselect"
+  // callback because a select with fewer elements already says that.
+  onSelect: (selections: Selection[]) => void;
   // A new token each time, even for the same locator — clicking the same
   // review-list row twice should re-reveal it (re-scroll, re-flash) both
   // times, not silently no-op the second time because the locator didn't
@@ -167,13 +175,7 @@ export function HumanPreview({ url, onSelect, revealRequest, locateRequest, modi
       if (event.source !== iframeRef.current?.contentWindow) return;
       if (isAxSelectMessage(event.data)) {
         setRevealedButHidden(false);
-        onSelect({
-          axId: event.data.axId,
-          tag: event.data.tag,
-          text: event.data.text,
-          href: event.data.href,
-          locator: event.data.locator,
-        });
+        onSelect(event.data.selections);
       }
       if (isRevealHiddenMessage(event.data)) {
         setRevealedButHidden(true);

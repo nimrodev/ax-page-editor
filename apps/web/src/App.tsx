@@ -58,6 +58,27 @@ export function serializeModifications(modifications: Modification[]): string {
   return stableStringify([...modifications].sort((a, b) => a.id.localeCompare(b.id)));
 }
 
+/**
+ * NIM-56: "Where one selected element contains another, hiding skips the
+ * descendant, since the ancestor's subtree already covers it." A
+ * locator's path is the full root-down tag chain (locator.ts's
+ * buildPath), so element B is a descendant of element A if and only if
+ * B's path is exactly A's path followed by ">" and more segments — the
+ * ">" boundary is what stops "section" from falsely matching a sibling
+ * like "sectionX" that merely shares a string prefix. Ancestry is
+ * checkable from the path strings alone; no real DOM is needed, which is
+ * what makes this a pure, unit-testable function despite selection
+ * itself living in the sandboxed iframe.
+ */
+export function filterDescendants(selections: Selection[]): Selection[] {
+  return selections.filter(
+    (candidate) =>
+      !selections.some(
+        (other) => other !== candidate && candidate.locator.path.startsWith(`${other.locator.path}>`),
+      ),
+  );
+}
+
 export default function App() {
   const [url, setUrl] = useState("");
   const [state, setState] = useState<LoadState>({ status: "idle" });
@@ -72,7 +93,11 @@ export default function App() {
     if (view === "human") humanViewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [view]);
   const [humanViewRequested, setHumanViewRequested] = useState(false);
-  const [selection, setSelection] = useState<Selection | null>(null);
+  // Always the full current selection (NIM-56) — empty, one, or several
+  // elements. A single Selection | null was the whole model before
+  // multi-select; every consumer below now takes an array, even the ones
+  // that only ever act on exactly one (a locate/reveal round trip).
+  const [selections, setSelections] = useState<Selection[]>([]);
   const [modifications, setModifications] = useState<Modification[]>([]);
   // What's actually on disk for this page, as of the last save or load —
   // the baseline "unsaved changes" is measured against. Starts as an
@@ -100,26 +125,44 @@ export default function App() {
   const [contextFocusToken, setContextFocusToken] = useState(0);
   const isDirty = serializeModifications(modifications) !== serializeModifications(savedModifications);
 
-  const handleHide = useCallback((target: Selection) => {
-    const id = modificationId("hide", target.locator.path);
-    setModifications((prev) => [
-      ...prev.filter((m) => m.id !== id),
-      { id, type: "hide", target: target.locator },
-    ]);
+  // NIM-56: descendants are filtered out first — "where one selected
+  // element contains another, hiding skips the descendant, since the
+  // ancestor's subtree already covers it" — then each remaining target
+  // gets its own hide modification via the same upsert every single-hide
+  // used, just repeated. Upserting (rather than toggling) is what makes
+  // "applying to a selection where some already carry it affects only
+  // the rest, with no error and no toggling-off" true for free: an
+  // already-hidden target's upsert just re-sets the same value.
+  const handleHide = useCallback((targets: Selection[]) => {
+    const kept = filterDescendants(targets);
+    setModifications((prev) => {
+      let next = prev;
+      for (const target of kept) {
+        const id = modificationId("hide", target.locator.path);
+        next = [...next.filter((m) => m.id !== id), { id, type: "hide", target: target.locator }];
+      }
+      return next;
+    });
   }, []);
 
   const handleSelect = useCallback(
-    (next: Selection) => {
-      setSelection(next);
+    (next: Selection[]) => {
+      setSelections(next);
+      // The pending-hide/pending-context flows below are single-target
+      // by construction (a Markdown block's popover locates exactly one
+      // axId) — guarding on next.length === 1 keeps a modifier-click
+      // selection from accidentally matching a stale pending id.
+      const [only] = next;
+      if (next.length !== 1 || !only) return;
       setPendingHideAxId((pending) => {
-        if (pending === next.axId) {
-          handleHide(next);
+        if (pending === only.axId) {
+          handleHide([only]);
           return null;
         }
         return pending;
       });
       setPendingContextAxId((pending) => {
-        if (pending === next.axId) {
+        if (pending === only.axId) {
           setContextFocusToken((t) => t + 1);
           return null;
         }
@@ -173,22 +216,33 @@ export default function App() {
     [handleLocateBlock],
   );
 
-  const handleSetContext = useCallback((target: Selection, text: string) => {
-    const id = modificationId("context", target.locator.path);
-    setModifications((prev) => [
-      ...prev.filter((m) => m.id !== id),
-      { id, type: "context", target: target.locator, value: { text } },
-    ]);
+  // NIM-56: "one text field, storing the same text as a separate
+  // modification per element, each individually editable afterwards" —
+  // no descendant filtering here (unlike hide): a context note on a
+  // container and one on something inside it are both meaningful at
+  // once, so there's no "already covered" case to skip.
+  const handleSetContext = useCallback((targets: Selection[], text: string) => {
+    setModifications((prev) => {
+      let next = prev;
+      for (const target of targets) {
+        const id = modificationId("context", target.locator.path);
+        next = [...next.filter((m) => m.id !== id), { id, type: "context", target: target.locator, value: { text } }];
+      }
+      return next;
+    });
   }, []);
 
-  const handleForwardLink = useCallback((target: Selection) => {
-    const href = target.href;
-    if (!href) return;
-    const id = modificationId("forwardLink", target.locator.path);
-    setModifications((prev) => [
-      ...prev.filter((m) => m.id !== id),
-      { id, type: "forwardLink", target: target.locator, value: { href } },
-    ]);
+  const handleForwardLink = useCallback((targets: Selection[]) => {
+    setModifications((prev) => {
+      let next = prev;
+      for (const target of targets) {
+        const href = target.href;
+        if (!href) continue;
+        const id = modificationId("forwardLink", target.locator.path);
+        next = [...next.filter((m) => m.id !== id), { id, type: "forwardLink", target: target.locator, value: { href } }];
+      }
+      return next;
+    });
   }, []);
 
   const handleRemove = useCallback((id: string) => {
@@ -211,7 +265,7 @@ export default function App() {
     setState({ status: "loading" });
     setView("human");
     setHumanViewRequested(true);
-    setSelection(null);
+    setSelections([]);
     setModifications([]);
     setSavedModifications([]);
     setLoadedInfo(null);
@@ -461,7 +515,7 @@ export default function App() {
                 </div>
                 <div className="flex shrink-0 flex-col gap-4">
                   <Inspector
-                    selection={selection}
+                    selections={selections}
                     modifications={modifications}
                     modificationStatuses={state.status === "ready" ? state.payload.modificationStatuses : []}
                     onHide={handleHide}

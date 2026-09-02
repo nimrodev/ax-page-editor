@@ -110,18 +110,34 @@ export const IFRAME_OVERLAY_SCRIPT = `
     return null;
   }
 
-  function postSelect(el) {
-    window.parent.postMessage(
-      {
-        type: "ax:select",
-        axId: el.getAttribute("data-ax-id"),
-        tag: el.tagName.toLowerCase(),
-        text: (el.textContent || "").trim().slice(0, 300),
-        href: el.getAttribute("href"),
-        locator: buildLocator(el),
-      },
-      "*",
-    );
+  function describeSelected(el) {
+    return {
+      axId: el.getAttribute("data-ax-id"),
+      tag: el.tagName.toLowerCase(),
+      text: (el.textContent || "").trim().slice(0, 300),
+      href: el.getAttribute("href"),
+      locator: buildLocator(el),
+    };
+  }
+
+  // The one place "selected" actually leaves this frame — always the
+  // full current selection (possibly empty, e.g. after Escape), never a
+  // delta, so the parent's own state is a plain mirror rather than
+  // something it has to reconcile against what it already had.
+  function postSelection() {
+    window.parent.postMessage({ type: "ax:select", selections: selected.map(describeSelected) }, "*");
+  }
+
+  // Clears highlights on whatever was selected, replaces it with exactly
+  // the given elements, and notifies the parent — the one path both a
+  // plain click and a programmatic reveal/locate go through, so
+  // "selection" never means two different things depending on how it
+  // was set.
+  function replaceSelection(elements) {
+    selected.forEach(clearHighlight);
+    selected = elements.slice();
+    selected.forEach(setHighlight);
+    postSelection();
   }
 
   // Mirrors resolve-locator.ts's exact-tier check (path resolves AND the
@@ -175,11 +191,11 @@ export const IFRAME_OVERLAY_SCRIPT = `
   function applyMarks(modifications) {
     Object.keys(marked).forEach(function (id) {
       var el = marked[id];
-      // A mark clears even if this element is also the live selection
-      // (clearHighlight would otherwise be undone by clearMark, or vice
-      // versa) — selected and marked are independent style layers, only
-      // one of which this loop owns.
-      if (el !== selected) clearMark(el);
+      // A mark clears even if this element is also part of the live
+      // selection (clearHighlight would otherwise be undone by clearMark,
+      // or vice versa) — selected and marked are independent style
+      // layers, only one of which this loop owns.
+      if (selected.indexOf(el) === -1) clearMark(el);
       else el.removeAttribute("data-ax-mark");
       delete marked[id];
     });
@@ -211,11 +227,11 @@ export const IFRAME_OVERLAY_SCRIPT = `
   }
 
   function revealElement(el) {
-    if (selected) clearHighlight(selected);
-    setHighlight(el);
-    selected = el;
+    // A locate/reveal always replaces the whole selection with just this
+    // one element — it's driven by the Review panel or a Markdown
+    // block's popover, both single-target flows, not an additive click.
+    replaceSelection([el]);
     el.scrollIntoView({ behavior: "smooth", block: "center" });
-    postSelect(el);
     // scrollIntoView and the outline above both silently no-op on an
     // element that resolves correctly but isn't actually rendered on
     // screen — the parent needs an explicit signal to tell "resolved but
@@ -277,13 +293,34 @@ export const IFRAME_OVERLAY_SCRIPT = `
       var match = axIdOf(event.target);
       if (!match) return;
 
-      if (selected) clearHighlight(selected);
-      setHighlight(match.el);
-      selected = match.el;
-      postSelect(match.el);
+      // NIM-56: a modifier click adds or removes one element from the
+      // selection; a plain click replaces the whole selection with just
+      // this one, same as before multi-select existed.
+      var additive = event.shiftKey || event.metaKey || event.ctrlKey;
+      if (!additive) {
+        replaceSelection([match.el]);
+        return;
+      }
+      var index = selected.indexOf(match.el);
+      if (index === -1) {
+        setHighlight(match.el);
+        selected.push(match.el);
+      } else {
+        clearHighlight(match.el);
+        selected.splice(index, 1);
+      }
+      postSelection();
     },
     true,
   );
+
+  // NIM-56: "Escape ... clears it" — the other half of "the selection
+  // persists after applying" (a plain click on a *new* element already
+  // clears the old selection down to just that one, per the handler
+  // above; this covers clearing to nothing without picking anything new).
+  document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape") replaceSelection([]);
+  });
 })();
 </script>
 `;

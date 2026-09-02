@@ -19,27 +19,17 @@ function extractClientBuildLocator(): (el: Element) => unknown {
   const scriptBody = IFRAME_OVERLAY_SCRIPT.match(/<script>([\s\S]*?)<\/script>/)?.[1];
   if (!scriptBody) throw new Error("Could not find the overlay's <script> body");
 
-  // Not a regex for the message listener — its callback body itself
-  // contains a "});" substring (el.scrollIntoView({...})), so a
-  // non-greedy /\}\);/ terminator matches too early and leaves the rest
-  // of the block as a dangling syntax error. Slicing out everything
-  // between the listener's own start and the next top-level statement
-  // (the click listener registration) doesn't have that problem — but
-  // has to run before the click listener itself is stripped, since that
-  // removal is what this slice anchors on.
+  // Everything this test needs (buildLocator and its own helpers) is
+  // defined before the script starts registering listeners — the message
+  // listener, the overlay-ready ping, and the click/keydown listeners
+  // that follow it all reference `window`/`document` at the top level
+  // (not deferred inside a function body), which breaks Node's `vm` eval
+  // outside a real DOM. Truncating the script at the first listener
+  // registration drops all of that in one place, rather than needing a
+  // fragile regex to strip each new top-level listener as it's added.
   const messageListenerStart = scriptBody.indexOf('window.addEventListener("message"');
-  const clickListenerStart = scriptBody.indexOf("document.addEventListener(");
-  const withoutMessageListener =
-    messageListenerStart === -1
-      ? scriptBody
-      : scriptBody.slice(0, messageListenerStart) + scriptBody.slice(clickListenerStart);
-  const withoutClickListener = withoutMessageListener.replace(
-    /document\.addEventListener\(\s*"click",[\s\S]*?true,\s*\);/,
-    "",
-  );
-  const withoutIife = withoutClickListener
-    .replace(/^\s*\(function \(\) \{/, "")
-    .replace(/\}\)\(\);\s*$/, "");
+  const withoutListeners = messageListenerStart === -1 ? scriptBody : scriptBody.slice(0, messageListenerStart);
+  const withoutIife = withoutListeners.replace(/^\s*\(function \(\) \{/, "");
   const exposed = withoutIife + "\nmodule.exports.buildLocator = buildLocator;";
 
   const sandbox = { exports: {} as Record<string, unknown> };
