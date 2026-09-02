@@ -8,6 +8,12 @@ export interface NavigatorEntry {
   type: Modification["type"];
   status: NavigatorStatus;
   label: string;
+  // Present only for a context/forwardLink whose target has a textHint to
+  // offer, and never for a hide (whose label already *is* the textHint).
+  // Bulk-applying the same context text to several elements via
+  // multi-select otherwise produces rows with identical labels and no way
+  // to tell which element each one is attached to.
+  targetHint?: string;
   // Present only for an applied context/forwardLink — the block it
   // produced, and so the thing a click can actually scroll to. A hide has
   // nothing to scroll to by definition; a shadowed or unresolved
@@ -16,6 +22,7 @@ export interface NavigatorEntry {
 }
 
 export const LABEL_LIMIT = 60;
+export const TARGET_HINT_LIMIT = 40;
 
 export function truncate(text: string, limit: number): string {
   return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
@@ -30,6 +37,13 @@ export function labelFor(modification: Modification): string {
     case "forwardLink":
       return modification.value.href;
   }
+}
+
+/** See NavigatorEntry.targetHint — undefined for a hide, or when the target has nothing to show. */
+export function targetHintFor(modification: Modification): string | undefined {
+  if (modification.type === "hide") return undefined;
+  const hint = modification.target.textHint;
+  return hint ? truncate(hint, TARGET_HINT_LIMIT) : undefined;
 }
 
 /**
@@ -51,6 +65,7 @@ export function buildNavigatorEntries(modifications: Modification[], payload: Ag
     type: modification.type,
     status: statusById.get(modification.id) ?? "unresolved",
     label: truncate(labelFor(modification), LABEL_LIMIT),
+    targetHint: targetHintFor(modification),
     axId: axIdByModificationId.get(modification.id),
   }));
 }
@@ -62,8 +77,8 @@ export const TYPE_META: Record<
   context: { icon: "◧", iconClass: "bg-blue-100 text-blue-700", borderClass: "border-blue-300", typeLabel: "Context" },
   forwardLink: {
     icon: "⇥",
-    iconClass: "bg-indigo-100 text-indigo-700",
-    borderClass: "border-indigo-300",
+    iconClass: "bg-green-100 text-green-700",
+    borderClass: "border-green-300",
     typeLabel: "Forwarded link",
   },
   hide: { icon: "⦰", iconClass: "bg-slate-200 text-slate-600", borderClass: "border-transparent", typeLabel: "Hidden" },
@@ -92,6 +107,7 @@ function NavigatorRow({ entry, active, onSelect }: RowProps) {
         <span className={`block truncate ${shadowed ? "text-slate-400 line-through decoration-slate-400" : "text-slate-700"}`}>
           {entry.label}
         </span>
+        {entry.targetHint && <span className="block truncate text-[10px] text-slate-400">on: {entry.targetHint}</span>}
         <span className="text-[10px] uppercase tracking-wide text-slate-400">{meta.typeLabel}</span>
       </span>
       {unresolved && (

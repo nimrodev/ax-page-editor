@@ -1,6 +1,6 @@
 import { Modification } from "@ax/schema";
 import { ModificationStatus } from "./api";
-import { labelFor, LABEL_LIMIT, TYPE_META, truncate } from "./ModificationNavigator";
+import { labelFor, LABEL_LIMIT, targetHintFor, TYPE_META, truncate } from "./ModificationNavigator";
 
 export interface ReviewEntry {
   modification: Modification;
@@ -10,6 +10,8 @@ export interface ReviewEntry {
   // never present in the agent payload. Absent, not false, otherwise.
   needsReview?: boolean;
   label: string;
+  // See ModificationNavigator's NavigatorEntry.targetHint — same rule.
+  targetHint?: string;
 }
 
 /**
@@ -27,6 +29,7 @@ export function buildReviewEntries(modifications: Modification[], statuses: Modi
       status: reported?.status ?? "unresolved",
       ...(reported?.needsReview ? { needsReview: true } : {}),
       label: truncate(labelFor(modification), LABEL_LIMIT),
+      targetHint: targetHintFor(modification),
     };
   });
 }
@@ -110,6 +113,9 @@ export function ReviewPanel({ entries, onReveal, onRemove }: ReviewPanelProps) {
                     >
                       {entry.label}
                     </span>
+                    {entry.targetHint && (
+                      <span className="block truncate text-[10px] text-slate-400">on: {entry.targetHint}</span>
+                    )}
                     <span className="text-[10px] uppercase tracking-wide text-slate-400">{meta.typeLabel}</span>
                   </span>
                 </button>

@@ -19,7 +19,12 @@ describe("buildReviewEntries", () => {
 
     expect(entries).toHaveLength(2);
     expect(entries[0]).toEqual({ modification: modifications[0], status: "applied", label: "Footer" });
-    expect(entries[1]).toEqual({ modification: modifications[1], status: "applied", label: "Shows revenue" });
+    expect(entries[1]).toEqual({
+      modification: modifications[1],
+      status: "applied",
+      label: "Shows revenue",
+      targetHint: "Chart",
+    });
   });
 
   it("defaults to unresolved for a modification the last render never reported on", () => {
@@ -55,6 +60,7 @@ describe("buildReviewEntries", () => {
       status: "applied",
       needsReview: true,
       label: "note",
+      targetHint: "t",
     });
   });
 
@@ -64,6 +70,24 @@ describe("buildReviewEntries", () => {
     const entries = buildReviewEntries(modifications, [{ id: "m1", status: "applied", tier: "exact" }]);
 
     expect(entries[0]).not.toHaveProperty("needsReview");
+  });
+
+  it("carries a targetHint for a context modification, so identical bulk-applied notes stay distinguishable", () => {
+    const modifications: Modification[] = [
+      { id: "m1", type: "context", target: locator("Q3 revenue chart"), value: { text: "Shared note" } },
+    ];
+
+    const entries = buildReviewEntries(modifications, [{ id: "m1", status: "applied", tier: "exact" }]);
+
+    expect(entries[0].targetHint).toBe("Q3 revenue chart");
+  });
+
+  it("omits targetHint for a hide, since its label is already the target's textHint", () => {
+    const modifications: Modification[] = [{ id: "m1", type: "hide", target: locator("Footer") }];
+
+    const entries = buildReviewEntries(modifications, [{ id: "m1", status: "applied", tier: "exact" }]);
+
+    expect(entries[0].targetHint).toBeUndefined();
   });
 });
 

@@ -24,7 +24,14 @@ describe("buildNavigatorEntries", () => {
     const entries = buildNavigatorEntries(modifications, payload);
 
     expect(entries).toEqual([
-      { modificationId: "mod-1", type: "context", status: "applied", label: "An explanation", axId: "ax-1-context" },
+      {
+        modificationId: "mod-1",
+        type: "context",
+        status: "applied",
+        label: "An explanation",
+        targetHint: "Target",
+        axId: "ax-1-context",
+      },
     ]);
   });
 
@@ -57,7 +64,14 @@ describe("buildNavigatorEntries", () => {
     const entries = buildNavigatorEntries(modifications, payload);
 
     expect(entries).toEqual([
-      { modificationId: "mod-4", type: "context", status: "shadowed", label: "note", axId: undefined },
+      {
+        modificationId: "mod-4",
+        type: "context",
+        status: "shadowed",
+        label: "note",
+        targetHint: "Inside a hidden section",
+        axId: undefined,
+      },
     ]);
   });
 
@@ -72,5 +86,36 @@ describe("buildNavigatorEntries", () => {
 
     expect(entries[0].label.length).toBeLessThan(longText.length);
     expect(entries[0].label.endsWith("…")).toBe(true);
+  });
+
+  it("carries a targetHint for a context modification, so identical bulk-applied notes stay distinguishable", () => {
+    const modifications: Modification[] = [
+      { id: "mod-6", type: "context", target: locator("Q3 revenue chart"), value: { text: "Shared note" } },
+    ];
+    const payload = payloadWith({ modificationStatuses: [{ id: "mod-6", status: "applied", tier: "exact" }] });
+
+    const entries = buildNavigatorEntries(modifications, payload);
+
+    expect(entries[0].targetHint).toBe("Q3 revenue chart");
+  });
+
+  it("omits targetHint for a hide, since its label is already the target's textHint", () => {
+    const modifications: Modification[] = [{ id: "mod-7", type: "hide", target: locator("Newsletter banner") }];
+    const payload = payloadWith({ modificationStatuses: [{ id: "mod-7", status: "applied", tier: "exact" }] });
+
+    const entries = buildNavigatorEntries(modifications, payload);
+
+    expect(entries[0].targetHint).toBeUndefined();
+  });
+
+  it("omits targetHint when the target has no textHint to offer", () => {
+    const modifications: Modification[] = [
+      { id: "mod-8", type: "context", target: locator(""), value: { text: "note" } },
+    ];
+    const payload = payloadWith({ modificationStatuses: [{ id: "mod-8", status: "applied", tier: "exact" }] });
+
+    const entries = buildNavigatorEntries(modifications, payload);
+
+    expect(entries[0].targetHint).toBeUndefined();
   });
 });
