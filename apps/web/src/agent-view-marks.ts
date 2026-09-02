@@ -15,15 +15,51 @@ export interface HtmlSegment {
 // anywhere among its attributes, regardless of attribute order — the
 // server sets its own marker attribute first and data-ax-id after, but
 // nothing here should depend on that staying true.
-const MARKER_TAG = /<[a-zA-Z][^>]*\bdata-ax-(context|forward)\b[^>]*>/g;
+const MARKER_TAG = /<([a-zA-Z][a-zA-Z0-9]*)\b[^>]*\bdata-ax-(context|forward)\b[^>]*>/g;
 const AX_ID_ATTR = /data-ax-id="([^"]*)"/;
 
 /**
+ * Finds the index just past the close tag that matches the marker's own
+ * opening tag, given only the tag name — apply-modifications.ts and
+ * link-forward.ts both build these nodes (a bare <span> for a context
+ * note, a <div> of <p>/<a> children for forwarded content) without ever
+ * nesting another element of the *same* tag name inside, so counting
+ * same-name open/close tags is enough to find the right close without a
+ * full HTML parse. Falls back to the end of the string for malformed
+ * input rather than looping forever.
+ */
+function findMatchingCloseTagEnd(html: string, searchFrom: number, tagName: string): number {
+  const openTag = new RegExp(`<${tagName}\\b`, "g");
+  const closeTag = new RegExp(`</${tagName}>`, "g");
+  let depth = 1;
+  let pos = searchFrom;
+
+  while (depth > 0) {
+    openTag.lastIndex = pos;
+    closeTag.lastIndex = pos;
+    const nextOpen = openTag.exec(html);
+    const nextClose = closeTag.exec(html);
+    if (!nextClose) return html.length;
+
+    if (nextOpen && nextOpen.index < nextClose.index) {
+      depth++;
+      pos = nextOpen.index + nextOpen[0].length;
+    } else {
+      depth--;
+      pos = nextClose.index + nextClose[0].length;
+    }
+  }
+  return pos;
+}
+
+/**
  * Splits raw HTML source text into segments so the HTML tab can highlight
- * just the opening tags that carry a modification marker (NIM-63), without
- * re-parsing the document into a live DOM — this operates on the exact
- * string the agent would receive, so what's rendered can never drift from
- * what's actually delivered.
+ * a whole modification-added element (NIM-63) — open tag through its
+ * matching close tag, so the publisher's actual note or forwarded content
+ * gets the color, not just the opening tag's markup — without re-parsing
+ * the document into a live DOM: this operates on the exact string the
+ * agent would receive, so what's rendered can never drift from what's
+ * actually delivered.
  */
 export function splitHtmlByMarkers(html: string): HtmlSegment[] {
   const segments: HtmlSegment[] = [];
@@ -35,13 +71,16 @@ export function splitHtmlByMarkers(html: string): HtmlSegment[] {
     if (match.index > lastIndex) {
       segments.push({ text: html.slice(lastIndex, match.index) });
     }
-    const tag = match[0];
+    const openTag = match[0];
+    const tagName = match[1];
+    const elementEnd = findMatchingCloseTagEnd(html, match.index + openTag.length, tagName);
     segments.push({
-      text: tag,
-      markerKind: match[1] === "context" ? "context" : "forwarded",
-      axId: AX_ID_ATTR.exec(tag)?.[1],
+      text: html.slice(match.index, elementEnd),
+      markerKind: match[2] === "context" ? "context" : "forwarded",
+      axId: AX_ID_ATTR.exec(openTag)?.[1],
     });
-    lastIndex = match.index + tag.length;
+    lastIndex = elementEnd;
+    MARKER_TAG.lastIndex = elementEnd;
   }
   if (lastIndex < html.length) {
     segments.push({ text: html.slice(lastIndex) });

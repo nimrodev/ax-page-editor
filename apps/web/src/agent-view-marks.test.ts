@@ -7,29 +7,41 @@ describe("splitHtmlByMarkers", () => {
     expect(splitHtmlByMarkers(html)).toEqual([{ text: html }]);
   });
 
-  it("splits out a context-note tag as its own segment, extracting its ax-id", () => {
+  // Highlighting just the opening tag (the original behavior) colored a
+  // fragment of raw markup — <span data-ax-context ...> — rather than the
+  // publisher's actual note text, which sits *after* that tag and so
+  // rendered as plain, unhighlighted text right next to it. The whole
+  // point of coloring a modification is to make its content findable;
+  // the segment now runs through the matching close tag so the note text
+  // itself is what gets the color.
+  it("splits out a context note's whole element — open tag through its matching close tag — as one segment", () => {
     const html = '<p>Before</p><span data-ax-context="" data-ax-id="ax-3-context">Note text</span><p>After</p>';
 
     const segments = splitHtmlByMarkers(html);
 
     expect(segments).toEqual([
       { text: "<p>Before</p>" },
-      { text: '<span data-ax-context="" data-ax-id="ax-3-context">', markerKind: "context", axId: "ax-3-context" },
-      { text: "Note text</span><p>After</p>" },
+      {
+        text: '<span data-ax-context="" data-ax-id="ax-3-context">Note text</span>',
+        markerKind: "context",
+        axId: "ax-3-context",
+      },
+      { text: "<p>After</p>" },
     ]);
   });
 
-  it("splits out a forwarded-content tag regardless of attribute order", () => {
-    const html = '<div data-ax-id="ax-7-forward" data-ax-forward-kind="content" data-ax-forward="">';
+  it("finds the matching close tag past nested elements of a different tag name", () => {
+    const html = '<div data-ax-forward="" data-ax-id="b"><p>From: <a href="x">x</a></p><p>Body</p></div><p>After</p>';
 
     const segments = splitHtmlByMarkers(html);
 
     expect(segments).toEqual([
       {
-        text: html,
+        text: '<div data-ax-forward="" data-ax-id="b"><p>From: <a href="x">x</a></p><p>Body</p></div>',
         markerKind: "forwarded",
-        axId: "ax-7-forward",
+        axId: "b",
       },
+      { text: "<p>After</p>" },
     ]);
   });
 
@@ -38,17 +50,22 @@ describe("splitHtmlByMarkers", () => {
 
     const segments = splitHtmlByMarkers(html);
 
-    expect(segments[0]).toEqual({ text: '<span data-ax-context="">', markerKind: "context", axId: undefined });
+    expect(segments[0]).toEqual({
+      text: '<span data-ax-context="">Note</span>',
+      markerKind: "context",
+      axId: undefined,
+    });
   });
 
   it("handles multiple markers in the same document", () => {
     const html =
-      '<span data-ax-context="" data-ax-id="a">X</span><div data-ax-forward="" data-ax-id="b">Y</div>';
+      '<span data-ax-context="" data-ax-id="a">X</span><div data-ax-forward="" data-ax-id="b"><p>Y</p></div>';
 
     const segments = splitHtmlByMarkers(html);
     const kinds = segments.filter((s) => s.markerKind).map((s) => s.markerKind);
 
     expect(kinds).toEqual(["context", "forwarded"]);
+    expect(segments.map((s) => s.text).join("")).toBe(html);
   });
 });
 
