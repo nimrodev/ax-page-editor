@@ -280,36 +280,36 @@ export function AgentPayloadView({
         </pre>
       )}
 
-      {/* Stacked in one flex column, not two independently-positioned
-          elements — the navigator's own height varies (a short collapsed
-          pill vs. an expanded list up to 50vh), and a fixed offset for the
-          Top button would either overlap a tall panel or leave a gap above
-          a short one. Flowing them through normal layout means the Top
-          button always sits flush against whatever height the navigator
-          actually renders at. */}
-      <div className="fixed top-1/2 right-6 flex -translate-y-1/2 flex-col items-end gap-2">
-        <ModificationNavigator
-          entries={entries}
-          expanded={expanded}
-          onToggleExpanded={setExpanded}
-          activeId={activeId}
-          onSelect={selectEntry}
-          jumpIndex={safeIndex}
-          jumpCount={changedBlocks.length}
-          onJumpDelta={(delta) => jumpTo(safeIndex + delta)}
-          suggestResume={suggestResume}
-          onResume={resumeToActive}
-        />
-        {showScrollTop && (
-          <button
-            onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-            aria-label="Scroll to top"
-            className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 shadow-lg hover:bg-slate-50"
-          >
-            ↑ Top
-          </button>
-        )}
-      </div>
+      {/* ModificationNavigator positions itself (mid-right collapsed,
+          bottom-right expanded) since the two states now cross-fade
+          rather than swap — a wrapper here with any transform would
+          create a containing block that hijacks its fixed children's
+          positioning. The Top button sits just above it: right above the
+          collapsed pill's own mid-right position while collapsed, and
+          hidden while expanded — the panel already scrolls its own list,
+          and stacking Top above a panel whose height varies with content
+          has no stable anchor to sit flush against. */}
+      <ModificationNavigator
+        entries={entries}
+        expanded={expanded}
+        onToggleExpanded={setExpanded}
+        activeId={activeId}
+        onSelect={selectEntry}
+        jumpIndex={safeIndex}
+        jumpCount={changedBlocks.length}
+        onJumpDelta={(delta) => jumpTo(safeIndex + delta)}
+        suggestResume={suggestResume}
+        onResume={resumeToActive}
+      />
+      {showScrollTop && !expanded && (
+        <button
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          aria-label="Scroll to top"
+          className="fixed top-1/2 right-6 flex -translate-y-24 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 shadow-lg hover:bg-slate-50"
+        >
+          ↑ Top
+        </button>
+      )}
     </div>
   );
 }
