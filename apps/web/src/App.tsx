@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Locator, Modification } from "@ax/schema";
 import {
   AgentPayload,
@@ -74,6 +74,15 @@ export default function App() {
   const [state, setState] = useState<LoadState>({ status: "idle" });
   const [format, setFormat] = useState<"markdown" | "html">("markdown");
   const [view, setView] = useState<"agent" | "human">("agent");
+  // Switching to Human view (a click, a Review panel reveal, or the dev
+  // panel's auto-reveal) updates content that can be well below the
+  // current scroll position — without this, "look, it changed" happens
+  // entirely off-screen and reads as "nothing happened" (reported live:
+  // "I still not seeing nothing changed in the preview page").
+  const humanViewRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (view === "human") humanViewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [view]);
   const [humanViewRequested, setHumanViewRequested] = useState(false);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [modifications, setModifications] = useState<Modification[]>([]);
@@ -585,7 +594,7 @@ export default function App() {
               "selection survives switching views".
             */}
             {humanViewRequested && (
-              <div style={{ display: view === "human" ? "flex" : "none" }} className="gap-4">
+              <div ref={humanViewRef} style={{ display: view === "human" ? "flex" : "none" }} className="gap-4">
                 <div className="flex-1">
                   <div className="mb-2 flex items-center gap-4 text-xs text-slate-500">
                     <span className="font-medium text-slate-600">Marked on the page:</span>
