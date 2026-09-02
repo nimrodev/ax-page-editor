@@ -1,7 +1,9 @@
 import { Modification } from "@ax/schema";
-import { resolveLocator } from "./resolve-locator";
+import { resolveLocator, LocatorResolution } from "./resolve-locator";
 import { insertBesideBlockAncestor } from "./block-ancestor";
 import { applyForwardLink, ForwardContext } from "./link-forward";
+
+type ResolvedTier = Exclude<LocatorResolution, { tier: "stale" }>;
 
 /**
  * Collapses a modification list to at most one entry per (target path,
@@ -56,16 +58,28 @@ function applyContext(document: Document, target: Element, text: string, modific
 export interface ModificationStatus {
   id: string;
   /**
-   * "unresolved": the locator didn't resolve against this render's document
-   * at all (drift, a genuinely removed element — see resolveLocator).
-   * "shadowed": the locator resolved fine, but the element it found sits
-   * inside another modification's hidden subtree, so it wasn't applied —
-   * distinct from "unresolved" because the modification isn't broken, it's
-   * just currently covered (NIM-52). Retained either way: never dropped
-   * from the configuration just because this render couldn't apply it.
-   * "applied": resolved, not shadowed, and its effect ran.
+   * "unresolved": the locator resolved neither by path nor by fingerprint
+   * — CONTEXT.md's "stale" (resolveLocator's "stale" tier). "shadowed":
+   * the locator resolved (exactly, drifted, or re-anchored — any
+   * non-stale tier), but the element it found sits inside another
+   * modification's hidden subtree, so it wasn't applied — distinct from
+   * "unresolved" because the modification isn't broken, it's just
+   * currently covered (NIM-52). Retained either way: never dropped from
+   * the configuration just because this render couldn't apply it.
+   * "applied": resolved (at any non-stale tier), not shadowed, and its
+   * effect ran — drift and re-anchor apply exactly like an exact match
+   * (NIM-54); see `needsReview` for the one type-specific exception.
    */
   status: "applied" | "shadowed" | "unresolved";
+  /**
+   * True only when an "applied" context note's target resolved via the
+   * "drift" tier — CONTEXT.md's "Needs review": the note's original
+   * content changed underneath it, so its continued relevance is in
+   * doubt, but it still applies (nothing here withholds it). Purely
+   * editorial state for the publisher's own review list; it must never
+   * reach the agent payload. Absent (not `false`) for every other case.
+   */
+  needsReview?: boolean;
 }
 
 /**
@@ -100,15 +114,18 @@ export async function applyModifications(
   const deduped = dedupeModifications(modifications);
   const resolved = deduped.map((modification) => ({
     modification,
-    element: resolveLocator(document, modification.target),
+    resolution: resolveLocator(document, modification.target),
   }));
 
   const hideElements = resolved
-    .filter((r) => r.modification.type === "hide" && r.element !== null)
-    .map((r) => r.element as Element);
+    .filter((r): r is { modification: Modification; resolution: ResolvedTier } =>
+      r.modification.type === "hide" && r.resolution.tier !== "stale",
+    )
+    .map((r) => r.resolution.element);
 
-  const statuses: ModificationStatus[] = resolved.map(({ modification, element }) => {
-    if (!element) return { id: modification.id, status: "unresolved" };
+  const statuses: ModificationStatus[] = resolved.map(({ modification, resolution }) => {
+    if (resolution.tier === "stale") return { id: modification.id, status: "unresolved" };
+    const { element } = resolution;
     // A hide can itself be shadowed by another hide (nested hidden
     // sections) — checked the same way as any other type, since applying
     // a redundant inner removal is harmless but reporting it as "applied"
@@ -116,12 +133,20 @@ export async function applyModifications(
     // element` guards a hide against shadowing itself, since Element#contains
     // is true for an element and itself.
     const shadowed = hideElements.some((hideEl) => hideEl !== element && hideEl.contains(element));
-    return { id: modification.id, status: shadowed ? "shadowed" : "applied" };
+    if (shadowed) return { id: modification.id, status: "shadowed" };
+    // See CONTEXT.md — Needs review: re-anchor is deliberately excluded —
+    // the fingerprint still matched there, so the note's content is
+    // intact, just relocated.
+    const needsReview = modification.type === "context" && resolution.tier === "drift";
+    return needsReview
+      ? { id: modification.id, status: "applied", needsReview: true }
+      : { id: modification.id, status: "applied" };
   });
   const statusById = new Map(statuses.map((s) => [s.id, s.status]));
 
-  for (const { modification, element } of resolved) {
-    if (!element || statusById.get(modification.id) === "shadowed") continue;
+  for (const { modification, resolution } of resolved) {
+    if (resolution.tier === "stale" || statusById.get(modification.id) === "shadowed") continue;
+    const { element } = resolution;
 
     switch (modification.type) {
       case "hide":
@@ -132,7 +157,19 @@ export async function applyModifications(
         break;
       case "forwardLink":
         if (forwardCtx) {
-          await applyForwardLink(document, element, modification.value, forwardCtx, modification.id);
+          // "forwarding applies against the anchor's current destination"
+          // (NIM-54 acceptance criteria) applies only on drift: an exact
+          // or re-anchored match's fingerprint already guarantees its
+          // href hasn't changed (buildFingerprint hashes href in), so
+          // only "drift" (same slot, changed fingerprint) can mean the
+          // anchor's href moved out from under the stored value — using
+          // its live href there, rather than the one captured back when
+          // the modification was created, is what makes it "current".
+          const value =
+            resolution.tier === "drift"
+              ? { ...modification.value, href: element.getAttribute("href") ?? modification.value.href }
+              : modification.value;
+          await applyForwardLink(document, element, value, forwardCtx, modification.id);
         }
         break;
     }

@@ -5,6 +5,10 @@ import { labelFor, LABEL_LIMIT, TYPE_META, truncate } from "./ModificationNaviga
 export interface ReviewEntry {
   modification: Modification;
   status: ModificationStatus["status"];
+  // Present only for a drifted, still-applied context note (NIM-54,
+  // CONTEXT.md — Needs review) — editorial state for this list alone,
+  // never present in the agent payload. Absent, not false, otherwise.
+  needsReview?: boolean;
   label: string;
 }
 
@@ -15,12 +19,16 @@ export interface ReviewEntry {
  * buildNavigatorEntries's own rule for the same case in the agent view.
  */
 export function buildReviewEntries(modifications: Modification[], statuses: ModificationStatus[]): ReviewEntry[] {
-  const statusById = new Map(statuses.map((s) => [s.id, s.status]));
-  return modifications.map((modification) => ({
-    modification,
-    status: statusById.get(modification.id) ?? "unresolved",
-    label: truncate(labelFor(modification), LABEL_LIMIT),
-  }));
+  const statusById = new Map(statuses.map((s) => [s.id, s]));
+  return modifications.map((modification) => {
+    const reported = statusById.get(modification.id);
+    return {
+      modification,
+      status: reported?.status ?? "unresolved",
+      ...(reported?.needsReview ? { needsReview: true } : {}),
+      label: truncate(labelFor(modification), LABEL_LIMIT),
+    };
+  });
 }
 
 interface ReviewPanelProps {
@@ -79,6 +87,11 @@ export function ReviewPanel({ entries, onReveal, onRemove }: ReviewPanelProps) {
                 {shadowed && (
                   <span className="mt-0.5 flex-none rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
                     Shadowed
+                  </span>
+                )}
+                {entry.needsReview && (
+                  <span className="mt-0.5 flex-none rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700">
+                    Needs review
                   </span>
                 )}
                 <button

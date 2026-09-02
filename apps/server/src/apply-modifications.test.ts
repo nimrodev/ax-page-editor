@@ -1,14 +1,35 @@
-import { describe, expect, it } from "@jest/globals";
+import { describe, expect, it, jest } from "@jest/globals";
 import { JSDOM } from "jsdom";
 import { buildLocator, Modification } from "@ax/schema";
 import { applyModifications, dedupeModifications } from "./apply-modifications";
 import { PageFetcher } from "./fetcher";
 import { SsrfGuard } from "./ssrf-guard";
 import { FetchBudget } from "./fetch-budget";
-import { ForwardLinkCache, ForwardCharBudget } from "./link-forward";
+import { ForwardLinkCache, ForwardCharBudget, ForwardContext } from "./link-forward";
 
 function documentFrom(html: string) {
   return new JSDOM(html).window.document;
+}
+
+function allowAllGuard() {
+  return new SsrfGuard({ resolveHost: async () => ["93.184.216.34"] });
+}
+
+function htmlResponse(body: string) {
+  return new Response(body, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
+}
+
+function fetcherFor(routes: Record<string, () => Response>) {
+  const fetchImpl = jest.fn(async (url: string) => {
+    const route = routes[url];
+    if (!route) throw new Error(`Unexpected fetch: ${url}`);
+    return route();
+  });
+  return new PageFetcher(allowAllGuard(), { fetchImpl: fetchImpl as unknown as typeof fetch });
+}
+
+function contextFor(pageUrl: string, fetcher: PageFetcher): ForwardContext {
+  return { pageUrl, fetcher, budget: new FetchBudget(), cache: new ForwardLinkCache(), charBudget: new ForwardCharBudget() };
 }
 
 describe("applyModifications", () => {
@@ -73,6 +94,95 @@ describe("applyModifications", () => {
     expect(document.querySelector("a")).not.toBeNull();
     expect(document.querySelector("[data-ax-context]")).toBeNull();
     expect(document.querySelector("[data-ax-forward]")).toBeNull();
+  });
+
+  // NIM-54 — drift and re-anchor no longer mean "skip"; only a genuinely
+  // stale locator does. "Drift behaves per type" (acceptance criteria):
+  // hide applies silently regardless of which of the three non-stale
+  // tiers resolved it — there's no editorial state a hidden element could
+  // need to review.
+  it("applies hide silently when the target has drifted (same position, different content)", async () => {
+    const document = documentFrom("<body><main><h1>Title</h1><p>Old text</p></main></body>");
+    const locator = buildLocator(document.querySelector("p")!);
+    document.querySelector("p")!.textContent = "New text";
+    const modifications: Modification[] = [{ id: "m1", type: "hide", target: locator }];
+
+    const statuses = await applyModifications(document, modifications);
+
+    expect(statuses).toEqual([{ id: "m1", status: "applied" }]);
+    expect(document.querySelector("p")).toBeNull();
+  });
+
+  it("applies hide at its new position when the target has re-anchored", async () => {
+    const document = documentFrom("<body><main><article><p>Move me</p></article></main></body>");
+    const locator = buildLocator(document.querySelector("p")!);
+    const moved = documentFrom("<body><aside><p>Move me</p></aside></body>");
+    const modifications: Modification[] = [{ id: "m1", type: "hide", target: locator }];
+
+    const statuses = await applyModifications(moved, modifications);
+
+    expect(statuses).toEqual([{ id: "m1", status: "applied" }]);
+    expect(moved.querySelector("p")).toBeNull();
+  });
+
+  // CONTEXT.md — Needs review: "A context note applied to an element
+  // whose content has drifted underneath it." Re-anchor is deliberately
+  // excluded — the fingerprint still matched, so the note's original
+  // content is intact, just relocated; only drift (same slot, changed
+  // fingerprint) puts the note's continued relevance in doubt.
+  it("flags a context note as needing review when its target has drifted", async () => {
+    const document = documentFrom("<body><main><h1>Title</h1><p>Old text</p></main></body>");
+    const locator = buildLocator(document.querySelector("p")!);
+    document.querySelector("p")!.textContent = "New text";
+    const modifications: Modification[] = [{ id: "m1", type: "context", target: locator, value: { text: "A note" } }];
+
+    const statuses = await applyModifications(document, modifications);
+
+    expect(statuses).toEqual([{ id: "m1", status: "applied", needsReview: true }]);
+    // Still applied — needs-review is editorial, not a reason to withhold it.
+    expect(document.querySelector("[data-ax-context]")).not.toBeNull();
+  });
+
+  it("does not flag a re-anchored context note as needing review", async () => {
+    const document = documentFrom("<body><main><article><p>Move me</p></article></main></body>");
+    const locator = buildLocator(document.querySelector("p")!);
+    const moved = documentFrom("<body><aside><p>Move me</p></aside></body>");
+    const modifications: Modification[] = [{ id: "m1", type: "context", target: locator, value: { text: "A note" } }];
+
+    const statuses = await applyModifications(moved, modifications);
+
+    expect(statuses).toEqual([{ id: "m1", status: "applied" }]);
+  });
+
+  it("leaves a genuinely stale modification unresolved, not needing review", async () => {
+    const document = documentFrom("<body><p>Hello</p></body>");
+    const fakeLocator = { path: "html>body>p:nth-of-type(9)", fingerprint: "x", textHint: "x" };
+    const modifications: Modification[] = [{ id: "m1", type: "context", target: fakeLocator, value: { text: "note" } }];
+
+    const statuses = await applyModifications(document, modifications);
+
+    expect(statuses).toEqual([{ id: "m1", status: "unresolved" }]);
+  });
+
+  // Acceptance criteria: "forwarding applies against the anchor's current
+  // destination" — the anchor's live href, not the href captured back
+  // when the modification was first created, so a link whose destination
+  // changed underneath it forwards wherever it actually points now.
+  it("forwards to the anchor's current href, not the modification's stored href, once it has drifted", async () => {
+    const document = documentFrom("<body><a href='/old'>link</a></body>");
+    const locator = buildLocator(document.querySelector("a")!);
+    document.querySelector("a")!.setAttribute("href", "/new");
+
+    const fetcher = fetcherFor({ "https://example.com/new": () => htmlResponse("<p>New destination</p>") });
+    const modifications: Modification[] = [
+      { id: "m1", type: "forwardLink", target: locator, value: { href: "https://example.com/old" } },
+    ];
+
+    const statuses = await applyModifications(document, modifications, contextFor("https://example.com/", fetcher));
+
+    expect(statuses).toEqual([{ id: "m1", status: "applied" }]);
+    const forwarded = document.querySelector("[data-ax-forward]");
+    expect(forwarded?.textContent).toContain("New destination");
   });
 });
 

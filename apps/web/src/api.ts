@@ -12,6 +12,10 @@ export interface MarkdownBlock {
 export interface ModificationStatus {
   id: string;
   status: "applied" | "shadowed" | "unresolved";
+  // True only for an "applied" context note whose target has drifted
+  // (CONTEXT.md — Needs review) — editorial state for the publisher's
+  // own review list, never present in the agent payload itself (NIM-54).
+  needsReview?: boolean;
 }
 
 export interface AgentPayload {

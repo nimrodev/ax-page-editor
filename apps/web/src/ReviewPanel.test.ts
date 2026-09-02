@@ -39,4 +39,30 @@ describe("buildReviewEntries", () => {
 
     expect(entries[0].status).toBe("shadowed");
   });
+
+  // NIM-54 — CONTEXT.md's "Needs review": editorial-only state for a
+  // drifted context note, carried through so the publisher's review list
+  // can flag it even though it's still "applied".
+  it("carries needsReview through for a drifted context note", () => {
+    const modifications: Modification[] = [
+      { id: "m1", type: "context", target: locator("t"), value: { text: "note" } },
+    ];
+
+    const entries = buildReviewEntries(modifications, [{ id: "m1", status: "applied", needsReview: true }]);
+
+    expect(entries[0]).toEqual({
+      modification: modifications[0],
+      status: "applied",
+      needsReview: true,
+      label: "note",
+    });
+  });
+
+  it("omits needsReview, rather than setting it false, for an ordinary applied modification", () => {
+    const modifications: Modification[] = [{ id: "m1", type: "hide", target: locator("Footer") }];
+
+    const entries = buildReviewEntries(modifications, [{ id: "m1", status: "applied" }]);
+
+    expect(entries[0]).not.toHaveProperty("needsReview");
+  });
 });
