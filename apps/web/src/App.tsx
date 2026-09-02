@@ -131,22 +131,31 @@ export default function App() {
     setRevealRequest({ locator: modification.target, token: Date.now() });
   }, []);
 
-  // Clicking a Markdown block's popover (NIM-66): all three actions start
-  // by locating the element in Human view — Hide and Add-context just
-  // additionally act once the real Selection for it comes back.
+  // Clicking a Markdown block's popover (NIM-66): "Locate on page" and
+  // "Add context" switch to Human view — the publisher explicitly asked
+  // to see the page, or needs the Inspector's textarea, which only
+  // renders alongside Human view. Resolving the axId into a real Locator
+  // still requires HumanPreview's iframe to be mounted (setHumanViewRequested
+  // below), but mounted isn't the same as visible — see the "stays mounted"
+  // comment by HumanPreview's render below.
   const handleLocateBlock = useCallback((axId: string) => {
     setView("human");
     setHumanViewRequested(true);
     setLocateRequest({ axId, token: Date.now() });
   }, []);
 
-  const handleHideBlock = useCallback(
-    (axId: string) => {
-      setPendingHideAxId(axId);
-      handleLocateBlock(axId);
-    },
-    [handleLocateBlock],
-  );
+  // Hide has nothing for the publisher to look at — it's applied the
+  // instant the resolved Selection comes back (handleSelect above), fully
+  // automatically — so unlike Locate/Add-context it only needs the iframe
+  // mounted to resolve the axId, not switched into view. Reported by the
+  // publisher as an unwanted view jump: they asked to hide something from
+  // the Agent view and didn't expect to be dropped onto a page with
+  // "nothing to see" as a result.
+  const handleHideBlock = useCallback((axId: string) => {
+    setPendingHideAxId(axId);
+    setHumanViewRequested(true);
+    setLocateRequest({ axId, token: Date.now() });
+  }, []);
 
   const handleAddContextBlock = useCallback(
     (axId: string) => {
