@@ -109,10 +109,31 @@ export async function fetchDevToolsEnabled(): Promise<boolean> {
   }
 }
 
-export function devMutate(url: string, mutations: DevMutation[]): Promise<{ ok: true }> {
-  return post("/api/dev/mutate", { url, mutations });
+/**
+ * Not routed through post() above: that helper's error shape (RenderFailure
+ * + a `reason` enum) is specific to page-render failures, and a dev
+ * mutation's own error — "No fixture for <url>" from FixtureStore.mutate,
+ * say — is exactly the text the publisher needs to see, not one of that
+ * enum's members. Throws the server's own message on failure so a caller
+ * can show it directly, rather than silently swallowing why nothing
+ * happened (the bug this was written to fix).
+ */
+async function postDevAction(path: string, body: unknown): Promise<void> {
+  const res = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const responseBody = await res.json().catch(() => null);
+    throw new Error(responseBody?.message ?? `Request failed (${res.status})`);
+  }
 }
 
-export function devReset(url: string): Promise<{ ok: true }> {
-  return post("/api/dev/reset", { url });
+export function devMutate(url: string, mutations: DevMutation[]): Promise<void> {
+  return postDevAction("/api/dev/mutate", { url, mutations });
+}
+
+export function devReset(url: string): Promise<void> {
+  return postDevAction("/api/dev/reset", { url });
 }

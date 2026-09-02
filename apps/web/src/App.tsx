@@ -110,6 +110,11 @@ export default function App() {
   // the page out from under the app without touching `url` or
   // `modifications`, neither of which would otherwise notice.
   const [devRefreshToken, setDevRefreshToken] = useState(0);
+  // Surfaces exactly why a mutate/reset call did nothing — e.g. "No
+  // fixture for <url>" when the loaded page isn't one of the three
+  // fixture-backed demo pages — rather than the button silently doing
+  // nothing, which is indistinguishable from it being broken.
+  const [devError, setDevError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchDevToolsEnabled().then(setDevToolsEnabled);
@@ -232,6 +237,7 @@ export default function App() {
     setSavedModifications([]);
     setLoadedInfo(null);
     setSaveStatus("idle");
+    setDevError(null);
     try {
       const payload = await renderPage(submittedUrl);
       setState({ status: "ready", url: submittedUrl, payload });
@@ -309,14 +315,20 @@ export default function App() {
   const handleDevMutate = useCallback(
     (mutation: DevMutation) => {
       if (state.status !== "ready") return;
-      devMutate(state.url, [mutation]).then(() => setDevRefreshToken((t) => t + 1));
+      setDevError(null);
+      devMutate(state.url, [mutation])
+        .then(() => setDevRefreshToken((t) => t + 1))
+        .catch((err) => setDevError(err instanceof Error ? err.message : "Mutation failed"));
     },
     [state],
   );
 
   const handleDevReset = useCallback(() => {
     if (state.status !== "ready") return;
-    devReset(state.url).then(() => setDevRefreshToken((t) => t + 1));
+    setDevError(null);
+    devReset(state.url)
+      .then(() => setDevRefreshToken((t) => t + 1))
+      .catch((err) => setDevError(err instanceof Error ? err.message : "Reset failed"));
   }, [state]);
 
   function selectView(next: "agent" | "human") {
@@ -422,6 +434,12 @@ export default function App() {
                 <button onClick={handleDevReset} className="ml-auto rounded px-2 py-1 font-medium underline">
                   Reset page
                 </button>
+                {devError && (
+                  <p className="w-full text-purple-700">
+                    {devError} — this only works on the fixture-backed demo pages (the Wikipedia LLM article, BBC
+                    News, or Stripe Pricing).
+                  </p>
+                )}
               </div>
             )}
             {loadedInfo && (
