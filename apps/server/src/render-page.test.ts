@@ -318,8 +318,8 @@ describe("renderPage shadows and restores modifications through the seam, agains
 
     expect(shadowed.modificationStatuses).toEqual(
       expect.arrayContaining([
-        { id: "m-hide", status: "applied" },
-        { id: "m-context", status: "shadowed" },
+        { id: "m-hide", status: "applied", tier: "exact" },
+        { id: "m-context", status: "shadowed", tier: "exact" },
       ]),
     );
     expect(shadowed.markdownBlocks.some((b) => b.markdown.includes("Article title"))).toBe(false);
@@ -334,7 +334,7 @@ describe("renderPage shadows and restores modifications through the seam, agains
       modifications: [{ id: "m-context", type: "context", target: h1Locator, value: { text: "Article title" } }],
     });
 
-    expect(restored.modificationStatuses).toEqual([{ id: "m-context", status: "applied" }]);
+    expect(restored.modificationStatuses).toEqual([{ id: "m-context", status: "applied", tier: "exact" }]);
     expect(restored.markdownBlocks.some((b) => b.markdown.includes("Article title"))).toBe(true);
     expect(restored.markdownBlocks.some((b) => b.markdown.trim() === "Large language model")).toBe(true);
   });

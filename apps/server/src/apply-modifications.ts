@@ -72,6 +72,15 @@ export interface ModificationStatus {
    */
   status: "applied" | "shadowed" | "unresolved";
   /**
+   * Which of ADR-0003's four graded tiers resolveLocator actually used —
+   * surfaced (not just consumed internally) so a caller can explain what
+   * happened in its own words, e.g. the dev-mutation demo panel (NIM-54)
+   * saying "found in the same spot, content changed" rather than just
+   * "applied". Always present, including for "unresolved" (always
+   * "stale" there) and "shadowed" (any non-stale tier, same as "applied").
+   */
+  tier: "exact" | "drift" | "reanchor" | "stale";
+  /**
    * True only when an "applied" context note's target resolved via the
    * "drift" tier — CONTEXT.md's "Needs review": the note's original
    * content changed underneath it, so its continued relevance is in
@@ -124,7 +133,7 @@ export async function applyModifications(
     .map((r) => r.resolution.element);
 
   const statuses: ModificationStatus[] = resolved.map(({ modification, resolution }) => {
-    if (resolution.tier === "stale") return { id: modification.id, status: "unresolved" };
+    if (resolution.tier === "stale") return { id: modification.id, status: "unresolved", tier: "stale" };
     const { element } = resolution;
     // A hide can itself be shadowed by another hide (nested hidden
     // sections) — checked the same way as any other type, since applying
@@ -133,14 +142,14 @@ export async function applyModifications(
     // element` guards a hide against shadowing itself, since Element#contains
     // is true for an element and itself.
     const shadowed = hideElements.some((hideEl) => hideEl !== element && hideEl.contains(element));
-    if (shadowed) return { id: modification.id, status: "shadowed" };
+    if (shadowed) return { id: modification.id, status: "shadowed", tier: resolution.tier };
     // See CONTEXT.md — Needs review: re-anchor is deliberately excluded —
     // the fingerprint still matched there, so the note's content is
     // intact, just relocated.
     const needsReview = modification.type === "context" && resolution.tier === "drift";
     return needsReview
-      ? { id: modification.id, status: "applied", needsReview: true }
-      : { id: modification.id, status: "applied" };
+      ? { id: modification.id, status: "applied", tier: resolution.tier, needsReview: true }
+      : { id: modification.id, status: "applied", tier: resolution.tier };
   });
   const statusById = new Map(statuses.map((s) => [s.id, s.status]));
 

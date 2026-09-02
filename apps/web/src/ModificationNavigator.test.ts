@@ -17,7 +17,7 @@ describe("buildNavigatorEntries", () => {
       { id: "mod-1", type: "context", target: locator("Target"), value: { text: "An explanation" } },
     ];
     const payload = payloadWith({
-      modificationStatuses: [{ id: "mod-1", status: "applied" }],
+      modificationStatuses: [{ id: "mod-1", status: "applied", tier: "exact" }],
       markdownBlocks: [{ axId: "ax-1-context", markdown: "An explanation", source: "context", modificationId: "mod-1" }],
     });
 
@@ -30,7 +30,7 @@ describe("buildNavigatorEntries", () => {
 
   it("gives a hide modification a label from its target's textHint and no axId, since it produced no block", () => {
     const modifications: Modification[] = [{ id: "mod-2", type: "hide", target: locator("Newsletter banner") }];
-    const payload = payloadWith({ modificationStatuses: [{ id: "mod-2", status: "applied" }] });
+    const payload = payloadWith({ modificationStatuses: [{ id: "mod-2", status: "applied", tier: "exact" }] });
 
     const entries = buildNavigatorEntries(modifications, payload);
 
@@ -52,7 +52,7 @@ describe("buildNavigatorEntries", () => {
     const modifications: Modification[] = [
       { id: "mod-4", type: "context", target: locator("Inside a hidden section"), value: { text: "note" } },
     ];
-    const payload = payloadWith({ modificationStatuses: [{ id: "mod-4", status: "shadowed" }] });
+    const payload = payloadWith({ modificationStatuses: [{ id: "mod-4", status: "shadowed", tier: "exact" }] });
 
     const entries = buildNavigatorEntries(modifications, payload);
 
@@ -66,7 +66,7 @@ describe("buildNavigatorEntries", () => {
     const modifications: Modification[] = [
       { id: "mod-5", type: "context", target: locator("t"), value: { text: longText } },
     ];
-    const payload = payloadWith({ modificationStatuses: [{ id: "mod-5", status: "applied" }] });
+    const payload = payloadWith({ modificationStatuses: [{ id: "mod-5", status: "applied", tier: "exact" }] });
 
     const entries = buildNavigatorEntries(modifications, payload);
 

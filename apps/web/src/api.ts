@@ -12,6 +12,11 @@ export interface MarkdownBlock {
 export interface ModificationStatus {
   id: string;
   status: "applied" | "shadowed" | "unresolved";
+  // Which of ADR-0003's four graded tiers resolved this modification —
+  // "exact" | "drift" | "reanchor" | "stale" (always "stale" when status
+  // is "unresolved"). Lets a caller explain what happened in its own
+  // words rather than just showing status (NIM-54's dev-mutation panel).
+  tier: "exact" | "drift" | "reanchor" | "stale";
   // True only for an "applied" context note whose target has drifted
   // (CONTEXT.md — Needs review) — editorial state for the publisher's
   // own review list, never present in the agent payload itself (NIM-54).

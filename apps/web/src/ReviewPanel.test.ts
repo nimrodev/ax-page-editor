@@ -13,8 +13,8 @@ describe("buildReviewEntries", () => {
       { id: "m2", type: "context", target: locator("Chart"), value: { text: "Shows revenue" } },
     ];
     const entries = buildReviewEntries(modifications, [
-      { id: "m1", status: "applied" },
-      { id: "m2", status: "applied" },
+      { id: "m1", status: "applied", tier: "exact" },
+      { id: "m2", status: "applied", tier: "exact" },
     ]);
 
     expect(entries).toHaveLength(2);
@@ -35,7 +35,7 @@ describe("buildReviewEntries", () => {
       { id: "m1", type: "context", target: locator("t"), value: { text: "note" } },
     ];
 
-    const entries = buildReviewEntries(modifications, [{ id: "m1", status: "shadowed" }]);
+    const entries = buildReviewEntries(modifications, [{ id: "m1", status: "shadowed", tier: "exact" }]);
 
     expect(entries[0].status).toBe("shadowed");
   });
@@ -48,7 +48,7 @@ describe("buildReviewEntries", () => {
       { id: "m1", type: "context", target: locator("t"), value: { text: "note" } },
     ];
 
-    const entries = buildReviewEntries(modifications, [{ id: "m1", status: "applied", needsReview: true }]);
+    const entries = buildReviewEntries(modifications, [{ id: "m1", status: "applied", tier: "drift", needsReview: true }]);
 
     expect(entries[0]).toEqual({
       modification: modifications[0],
@@ -61,7 +61,7 @@ describe("buildReviewEntries", () => {
   it("omits needsReview, rather than setting it false, for an ordinary applied modification", () => {
     const modifications: Modification[] = [{ id: "m1", type: "hide", target: locator("Footer") }];
 
-    const entries = buildReviewEntries(modifications, [{ id: "m1", status: "applied" }]);
+    const entries = buildReviewEntries(modifications, [{ id: "m1", status: "applied", tier: "exact" }]);
 
     expect(entries[0]).not.toHaveProperty("needsReview");
   });
