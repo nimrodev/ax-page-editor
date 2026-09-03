@@ -89,7 +89,7 @@ flowchart TB
         Step1 --> Step2 --> Step3 --> Step4 --> Step5 --> Step6
     end
 
-    TargetPage[("Target page<br/>third-party URL")]
+    TargetPage(["Target page<br/>third-party URL, out on the real internet"])
     Step1 --> TargetPage
 
     RenderAPI -- "rendered payload" --> Browser
