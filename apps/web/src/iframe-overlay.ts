@@ -35,7 +35,11 @@ export const SHARED_ELEMENT_MARK_COLOR = "#0f172a";
 export const IFRAME_OVERLAY_SCRIPT = `
 <script>
 (function () {
-  var HIGHLIGHT_OUTLINE = "2px solid #2563eb";
+  // Bold enough to catch the eye immediately on click, and a glow on top
+  // of the outline so it still reads clearly over a busy or colorful
+  // page background that a thin line alone could get lost in.
+  var HIGHLIGHT_OUTLINE = "3px solid #f97316";
+  var HIGHLIGHT_GLOW = "0 0 0 4px rgba(249, 115, 22, 0.25)";
   // NIM-56: a plain array, not a single element — a modifier click adds
   // or removes one element from the selection rather than always
   // replacing it. Order doesn't carry meaning; it's just whatever order
@@ -98,11 +102,13 @@ export const IFRAME_OVERLAY_SCRIPT = `
     // thing this overlay exists to show.
     el.style.setProperty("outline", HIGHLIGHT_OUTLINE, "important");
     el.style.setProperty("outline-offset", "2px", "important");
+    el.style.setProperty("box-shadow", HIGHLIGHT_GLOW, "important");
   }
 
   function clearHighlight(el) {
     el.style.removeProperty("outline");
     el.style.removeProperty("outline-offset");
+    el.style.removeProperty("box-shadow");
   }
 
   function axIdOf(el) {
