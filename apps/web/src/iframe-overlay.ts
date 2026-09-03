@@ -35,11 +35,15 @@ export const SHARED_ELEMENT_MARK_COLOR = "#0f172a";
 export const IFRAME_OVERLAY_SCRIPT = `
 <script>
 (function () {
-  // Bold enough to catch the eye immediately on click, and a glow on top
-  // of the outline so it still reads clearly over a busy or colorful
-  // page background that a thin line alone could get lost in.
-  var HIGHLIGHT_OUTLINE = "3px solid #f97316";
-  var HIGHLIGHT_GLOW = "0 0 0 4px rgba(249, 115, 22, 0.25)";
+  // A box-shadow ring, not an outline: a modification mark (below) is
+  // drawn with outline, and an element can be both selected and marked
+  // at once (e.g. a just-forwarded link stays selected) — sharing one
+  // CSS property between the two would mean clearing either one clobbers
+  // the other, which is exactly what used to make a mark vanish the
+  // moment the selection moved on to a different element. Two layered
+  // shadows stand in for a bold solid ring plus a soft outer glow, since
+  // box-shadow has no separate "width" the way outline does.
+  var HIGHLIGHT_GLOW = "0 0 0 3px #f97316, 0 0 0 7px rgba(249, 115, 22, 0.25)";
   // NIM-56: a plain array, not a single element — a modifier click adds
   // or removes one element from the selection rather than always
   // replacing it. Order doesn't carry meaning; it's just whatever order
@@ -97,21 +101,25 @@ export const IFRAME_OVERLAY_SCRIPT = `
 
   function setHighlight(el) {
     // setProperty(..., "important") rather than the style shorthand: a
-    // page's own CSS reset (outline: none !important is common) would
+    // page's own CSS reset (box-shadow: none !important is common) would
     // otherwise beat a plain inline style, silently defeating the one
     // thing this overlay exists to show.
-    el.style.setProperty("outline", HIGHLIGHT_OUTLINE, "important");
-    el.style.setProperty("outline-offset", "2px", "important");
     el.style.setProperty("box-shadow", HIGHLIGHT_GLOW, "important");
   }
 
   function clearHighlight(el) {
-    el.style.removeProperty("outline");
-    el.style.removeProperty("outline-offset");
     el.style.removeProperty("box-shadow");
   }
 
+  // Prefers the nearest enclosing link over the exact leaf clicked: a
+  // link's own text is often wrapped in further inline markup (an icon
+  // span, a bolded fragment), and every element carries a data-ax-id, so
+  // without this a click landing on that inner span would select the
+  // span instead of the link — silently blocking "forward this link" for
+  // exactly the part of the page that feature exists for.
   function axIdOf(el) {
+    var link = el && el.closest ? el.closest("a[data-ax-id]") : null;
+    if (link) return { id: link.getAttribute("data-ax-id"), el: link };
     while (el && el !== document.documentElement) {
       var id = el.getAttribute && el.getAttribute("data-ax-id");
       if (id) return { id: id, el: el };
