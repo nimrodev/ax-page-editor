@@ -109,7 +109,7 @@ describe("applyModifications", () => {
 
     const statuses = await applyModifications(document, modifications);
 
-    expect(statuses).toEqual([{ id: "m1", status: "applied", tier: "drift" }]);
+    expect(statuses).toEqual([{ id: "m1", status: "applied" }]);
     expect(document.querySelector("p")).toBeNull();
   });
 
@@ -121,7 +121,7 @@ describe("applyModifications", () => {
 
     const statuses = await applyModifications(moved, modifications);
 
-    expect(statuses).toEqual([{ id: "m1", status: "applied", tier: "reanchor" }]);
+    expect(statuses).toEqual([{ id: "m1", status: "applied" }]);
     expect(moved.querySelector("p")).toBeNull();
   });
 
@@ -138,7 +138,7 @@ describe("applyModifications", () => {
 
     const statuses = await applyModifications(document, modifications);
 
-    expect(statuses).toEqual([{ id: "m1", status: "applied", tier: "drift", needsReview: true }]);
+    expect(statuses).toEqual([{ id: "m1", status: "applied", needsReview: true }]);
     // Still applied — needs-review is editorial, not a reason to withhold it.
     expect(document.querySelector("[data-ax-context]")).not.toBeNull();
   });
@@ -151,7 +151,7 @@ describe("applyModifications", () => {
 
     const statuses = await applyModifications(moved, modifications);
 
-    expect(statuses).toEqual([{ id: "m1", status: "applied", tier: "reanchor" }]);
+    expect(statuses).toEqual([{ id: "m1", status: "applied" }]);
   });
 
   it("leaves a genuinely stale modification unresolved, not needing review", async () => {
@@ -161,7 +161,7 @@ describe("applyModifications", () => {
 
     const statuses = await applyModifications(document, modifications);
 
-    expect(statuses).toEqual([{ id: "m1", status: "unresolved", tier: "stale" }]);
+    expect(statuses).toEqual([{ id: "m1", status: "unresolved" }]);
   });
 
   // Acceptance criteria: "forwarding applies against the anchor's current
@@ -180,7 +180,7 @@ describe("applyModifications", () => {
 
     const statuses = await applyModifications(document, modifications, contextFor("https://example.com/", fetcher));
 
-    expect(statuses).toEqual([{ id: "m1", status: "applied", tier: "drift" }]);
+    expect(statuses).toEqual([{ id: "m1", status: "applied" }]);
     const forwarded = document.querySelector("[data-ax-forward]");
     expect(forwarded?.textContent).toContain("New destination");
   });
@@ -451,8 +451,8 @@ describe("applyModifications: shadowing (NIM-52)", () => {
     expect(document.querySelector("[data-ax-context]")).toBeNull();
     expect(statuses).toEqual(
       expect.arrayContaining([
-        { id: "m-hide", status: "applied", tier: "exact" },
-        { id: "m-context", status: "shadowed", tier: "exact" },
+        { id: "m-hide", status: "applied" },
+        { id: "m-context", status: "shadowed" },
       ]),
     );
   });
@@ -504,8 +504,8 @@ describe("applyModifications: shadowing (NIM-52)", () => {
 
     expect(statuses).toEqual(
       expect.arrayContaining([
-        { id: "m-outer", status: "applied", tier: "exact" },
-        { id: "m-inner", status: "shadowed", tier: "exact" },
+        { id: "m-outer", status: "applied" },
+        { id: "m-inner", status: "shadowed" },
       ]),
     );
     // Still gone either way — the outer hide's removal takes the whole
@@ -539,7 +539,7 @@ describe("applyModifications: shadowing (NIM-52)", () => {
     const restoredRender = freshDocument();
     const restoredStatuses = await applyModifications(restoredRender, [contextMod]);
 
-    expect(restoredStatuses).toEqual([{ id: "m-context", status: "applied", tier: "exact" }]);
+    expect(restoredStatuses).toEqual([{ id: "m-context", status: "applied" }]);
     const note = restoredRender.querySelector("[data-ax-context]");
     expect(note).not.toBeNull();
     expect(note!.textContent).toBe("Still here");
@@ -576,8 +576,8 @@ describe("applyModifications: shadowing (NIM-52)", () => {
 
     expect(statuses).toEqual(
       expect.arrayContaining([
-        { id: "m-context", status: "applied", tier: "exact" },
-        { id: "m-forward", status: "applied", tier: "exact" },
+        { id: "m-context", status: "applied" },
+        { id: "m-forward", status: "applied" },
       ]),
     );
     expect(document.querySelector("[data-ax-context]")).not.toBeNull();

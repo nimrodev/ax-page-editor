@@ -17,7 +17,7 @@ describe("buildNavigatorEntries", () => {
       { id: "mod-1", type: "context", target: locator("Target"), value: { text: "An explanation" } },
     ];
     const payload = payloadWith({
-      modificationStatuses: [{ id: "mod-1", status: "applied", tier: "exact" }],
+      modificationStatuses: [{ id: "mod-1", status: "applied" }],
       markdownBlocks: [{ axId: "ax-1-context", markdown: "An explanation", source: "context", modificationId: "mod-1" }],
     });
 
@@ -37,7 +37,7 @@ describe("buildNavigatorEntries", () => {
 
   it("gives a hide modification a label from its target's textHint and no axId, since it produced no block", () => {
     const modifications: Modification[] = [{ id: "mod-2", type: "hide", target: locator("Newsletter banner") }];
-    const payload = payloadWith({ modificationStatuses: [{ id: "mod-2", status: "applied", tier: "exact" }] });
+    const payload = payloadWith({ modificationStatuses: [{ id: "mod-2", status: "applied" }] });
 
     const entries = buildNavigatorEntries(modifications, payload);
 
@@ -59,7 +59,7 @@ describe("buildNavigatorEntries", () => {
     const modifications: Modification[] = [
       { id: "mod-4", type: "context", target: locator("Inside a hidden section"), value: { text: "note" } },
     ];
-    const payload = payloadWith({ modificationStatuses: [{ id: "mod-4", status: "shadowed", tier: "exact" }] });
+    const payload = payloadWith({ modificationStatuses: [{ id: "mod-4", status: "shadowed" }] });
 
     const entries = buildNavigatorEntries(modifications, payload);
 
@@ -80,7 +80,7 @@ describe("buildNavigatorEntries", () => {
     const modifications: Modification[] = [
       { id: "mod-5", type: "context", target: locator("t"), value: { text: longText } },
     ];
-    const payload = payloadWith({ modificationStatuses: [{ id: "mod-5", status: "applied", tier: "exact" }] });
+    const payload = payloadWith({ modificationStatuses: [{ id: "mod-5", status: "applied" }] });
 
     const entries = buildNavigatorEntries(modifications, payload);
 
@@ -92,7 +92,7 @@ describe("buildNavigatorEntries", () => {
     const modifications: Modification[] = [
       { id: "mod-6", type: "context", target: locator("Q3 revenue chart"), value: { text: "Shared note" } },
     ];
-    const payload = payloadWith({ modificationStatuses: [{ id: "mod-6", status: "applied", tier: "exact" }] });
+    const payload = payloadWith({ modificationStatuses: [{ id: "mod-6", status: "applied" }] });
 
     const entries = buildNavigatorEntries(modifications, payload);
 
@@ -101,7 +101,7 @@ describe("buildNavigatorEntries", () => {
 
   it("omits targetHint for a hide, since its label is already the target's textHint", () => {
     const modifications: Modification[] = [{ id: "mod-7", type: "hide", target: locator("Newsletter banner") }];
-    const payload = payloadWith({ modificationStatuses: [{ id: "mod-7", status: "applied", tier: "exact" }] });
+    const payload = payloadWith({ modificationStatuses: [{ id: "mod-7", status: "applied" }] });
 
     const entries = buildNavigatorEntries(modifications, payload);
 
@@ -112,7 +112,7 @@ describe("buildNavigatorEntries", () => {
     const modifications: Modification[] = [
       { id: "mod-8", type: "context", target: locator(""), value: { text: "note" } },
     ];
-    const payload = payloadWith({ modificationStatuses: [{ id: "mod-8", status: "applied", tier: "exact" }] });
+    const payload = payloadWith({ modificationStatuses: [{ id: "mod-8", status: "applied" }] });
 
     const entries = buildNavigatorEntries(modifications, payload);
 
