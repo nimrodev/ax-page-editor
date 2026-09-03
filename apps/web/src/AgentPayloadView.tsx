@@ -82,7 +82,10 @@ export function AgentPayloadView({
   );
   const entries = useMemo(() => buildNavigatorEntries(modifications, payload), [modifications, payload]);
   const [index, setIndex] = useState(0);
-  const [expanded, setExpanded] = useState(false);
+  // Starts expanded (NIM-64 originally defaulted collapsed) — a publisher
+  // opening Agent view for the first time was landing on a bare pill with
+  // no indication of what it even summarizes, before ever seeing the list.
+  const [expanded, setExpanded] = useState(true);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [openPopoverAxId, setOpenPopoverAxId] = useState<string | null>(null);
