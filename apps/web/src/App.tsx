@@ -499,36 +499,50 @@ export default function App() {
               <p className="text-sm text-slate-500">
                 {view === "agent" ? "This is what an AI agent sees today." : "The page as it actually looks."}
               </p>
-              <div className="flex gap-1 text-sm">
-                <button
-                  onClick={() => selectView("agent")}
-                  className={`rounded px-3 py-1 ${view === "agent" ? "bg-slate-800 text-white" : "text-slate-600"}`}
-                >
-                  Agent view
-                </button>
+              {/* Segmented control, not two loose buttons: the shared pill border is what tells a
+                  publisher these two options belong to one switch rather than being independent actions. */}
+              <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm">
                 <button
                   onClick={() => selectView("human")}
-                  className={`rounded px-3 py-1 ${view === "human" ? "bg-slate-800 text-white" : "text-slate-600"}`}
+                  className={`rounded-md px-3 py-1 text-sm font-medium transition ${
+                    view === "human" ? "bg-slate-800 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"
+                  }`}
                 >
-                  Human view
+                  🙂 Human view
+                </button>
+                <button
+                  onClick={() => selectView("agent")}
+                  className={`rounded-md px-3 py-1 text-sm font-medium transition ${
+                    view === "agent" ? "bg-slate-800 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  🤖 Agent view
                 </button>
               </div>
             </div>
 
             <div style={{ display: view === "agent" ? "block" : "none" }}>
-              <div className="mb-2 flex justify-end gap-1 text-sm">
-                <button
-                  onClick={() => setFormat("markdown")}
-                  className={`rounded px-2 py-1 ${format === "markdown" ? "bg-slate-800 text-white" : "text-slate-600"}`}
-                >
-                  Markdown
-                </button>
-                <button
-                  onClick={() => setFormat("html")}
-                  className={`rounded px-2 py-1 ${format === "html" ? "bg-slate-800 text-white" : "text-slate-600"}`}
-                >
-                  HTML
-                </button>
+              {/* Kept visually quiet and smaller than the view switch above: it's a nested detail of
+                  the agent view, not a decision of the same weight. */}
+              <div className="mb-2 flex justify-end">
+                <div className="inline-flex rounded-md border border-slate-200 bg-slate-50 p-0.5 text-xs">
+                  <button
+                    onClick={() => setFormat("markdown")}
+                    className={`rounded px-2 py-0.5 font-medium transition ${
+                      format === "markdown" ? "bg-white text-slate-700 shadow-sm" : "text-slate-400 hover:text-slate-600"
+                    }`}
+                  >
+                    Markdown
+                  </button>
+                  <button
+                    onClick={() => setFormat("html")}
+                    className={`rounded px-2 py-0.5 font-medium transition ${
+                      format === "html" ? "bg-white text-slate-700 shadow-sm" : "text-slate-400 hover:text-slate-600"
+                    }`}
+                  >
+                    HTML
+                  </button>
+                </div>
               </div>
               <AgentPayloadView
                 payload={state.payload}
