@@ -124,11 +124,14 @@ export default function App() {
   const [pendingContextAxId, setPendingContextAxId] = useState<string | null>(null);
   const [contextFocusToken, setContextFocusToken] = useState(0);
   const isDirty = serializeModifications(modifications) !== serializeModifications(savedModifications);
-  // One snapshot per edit (hide/context/forward/remove) — Undo pops the
-  // most recent one. Loading a page or discarding changes back to the
-  // saved baseline (handleReset) clear this outright rather than adding
-  // to it: neither is an edit to step back through, they're a clean
-  // slate for whatever comes next.
+  // One snapshot per edit (hide/context/forward/remove) or Reset — Undo
+  // pops the most recent one. Loading an entirely new page clears this
+  // outright rather than adding to it: a fresh page isn't an edit to step
+  // back through, it's a clean slate. Reset, by contrast, pushes onto
+  // history just like any other change — it discards everything back to
+  // the saved baseline, but a publisher who hits it by mistake (or
+  // changes their mind) can still Undo their way back, rather than Reset
+  // being the one action with no way back.
   const [history, setHistory] = useState<Modification[][]>([]);
 
   const updateModifications = useCallback((updater: (prev: Modification[]) => Modification[]) => {
@@ -148,9 +151,8 @@ export default function App() {
   }, []);
 
   const handleReset = useCallback(() => {
-    setModifications(savedModifications);
-    setHistory([]);
-  }, [savedModifications]);
+    updateModifications(() => savedModifications);
+  }, [savedModifications, updateModifications]);
 
   // NIM-56: descendants are filtered out first — "where one selected
   // element contains another, hiding skips the descendant, since the
