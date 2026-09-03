@@ -208,13 +208,15 @@ export const IFRAME_OVERLAY_SCRIPT = `
   // everything from scratch is the only way that's never stale.
   function applyMarks(modifications) {
     Object.keys(marked).forEach(function (id) {
-      var el = marked[id];
-      // A mark clears even if this element is also part of the live
-      // selection (clearHighlight would otherwise be undone by clearMark,
-      // or vice versa) — selected and marked are independent style
-      // layers, only one of which this loop owns.
-      if (selected.indexOf(el) === -1) clearMark(el);
-      else el.removeAttribute("data-ax-mark");
+      // Always fully cleared, selected or not — a mark's outline and a
+      // selection's box-shadow are separate CSS properties now (see
+      // setHighlight above), so there's no shared state left for the two
+      // to clobber. Skipping the outline clear here for a still-selected
+      // element used to be necessary when both used outline; now it just
+      // leaves a stale mark outline behind once its modification is
+      // removed, orphaned forever since nothing else will ever visit
+      // this element's outline again.
+      clearMark(marked[id]);
       delete marked[id];
     });
 
