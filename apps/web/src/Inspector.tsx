@@ -98,28 +98,66 @@ function SingleInspector({
         </div>
       </dl>
 
-      {hideModification ? (
-        <div className="rounded border border-blue-200 bg-blue-50 p-2">
-          <p className="text-blue-900">
-            {isShadowed(modificationStatuses, hideModification.id)
-              ? "Hidden from AI agents (currently inside another hidden element)"
-              : "Hidden from AI agents"}
-          </p>
-          <button
-            onClick={() => onRemove(hideModification.id)}
-            className="mt-1 text-xs font-medium text-blue-700 underline"
-          >
-            Remove
-          </button>
+      {/*
+        Hide and Forward are both whole-element actions on the current
+        selection — placed side by side so they read as a pair, with
+        Context (an annotation, not an action on the element itself) kept
+        visually separate below. Previously Context sat between them,
+        which made the two actions look unrelated to each other.
+      */}
+      <div className="flex gap-2">
+        <div className="flex-1">
+          {hideModification ? (
+            <div className="rounded border border-blue-200 bg-blue-50 p-2">
+              <p className="text-blue-900">
+                {isShadowed(modificationStatuses, hideModification.id)
+                  ? "Hidden from AI agents (currently inside another hidden element)"
+                  : "Hidden from AI agents"}
+              </p>
+              <button
+                onClick={() => onRemove(hideModification.id)}
+                className="mt-1 text-xs font-medium text-blue-700 underline"
+              >
+                Remove
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => onHide([selection])}
+              className="w-full rounded bg-slate-800 px-3 py-1.5 text-sm font-medium text-white"
+            >
+              Hide from AI agents
+            </button>
+          )}
         </div>
-      ) : (
-        <button
-          onClick={() => onHide([selection])}
-          className="w-full rounded bg-slate-800 px-3 py-1.5 text-sm font-medium text-white"
-        >
-          Hide from AI agents
-        </button>
-      )}
+
+        {canForward && (
+          <div className="flex-1">
+            {forwardModification ? (
+              <div className="rounded border border-green-200 bg-green-50 p-2">
+                <p className="text-green-900">
+                  {isShadowed(modificationStatuses, forwardModification.id)
+                    ? "Forwarding linked content (hidden by an ancestor, not currently applied)"
+                    : "Forwarding linked content to agents"}
+                </p>
+                <button
+                  onClick={() => onRemove(forwardModification.id)}
+                  className="mt-1 text-xs font-medium text-green-700 underline"
+                >
+                  Remove
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => onForwardLink([selection])}
+                className="w-full rounded bg-slate-800 px-3 py-1.5 text-sm font-medium text-white"
+              >
+                Forward this link's content
+              </button>
+            )}
+          </div>
+        )}
+      </div>
 
       <div className="border-t border-slate-100 pt-3">
         <label className="text-xs font-medium text-slate-500">Context for agents</label>
@@ -157,33 +195,6 @@ function SingleInspector({
           )}
         </div>
       </div>
-
-      {canForward && (
-        <div className="border-t border-slate-100 pt-3">
-          {forwardModification ? (
-            <div className="rounded border border-green-200 bg-green-50 p-2">
-              <p className="text-green-900">
-                {isShadowed(modificationStatuses, forwardModification.id)
-                  ? "Forwarding linked content (hidden by an ancestor, not currently applied)"
-                  : "Forwarding linked content to agents"}
-              </p>
-              <button
-                onClick={() => onRemove(forwardModification.id)}
-                className="mt-1 text-xs font-medium text-green-700 underline"
-              >
-                Remove
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => onForwardLink([selection])}
-              className="w-full rounded bg-slate-800 px-3 py-1.5 text-sm font-medium text-white"
-            >
-              Forward this link's content
-            </button>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -216,12 +227,23 @@ function MultiInspector({
         {selections.length} elements selected
       </p>
 
-      <button
-        onClick={() => onHide(selections)}
-        className="w-full rounded bg-slate-800 px-3 py-1.5 text-sm font-medium text-white"
-      >
-        Hide all from AI agents
-      </button>
+      {/* See SingleInspector: Hide and Forward are both whole-element actions, kept side by side and apart from Context. */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => onHide(selections)}
+          className="flex-1 rounded bg-slate-800 px-3 py-1.5 text-sm font-medium text-white"
+        >
+          Hide all from AI agents
+        </button>
+        {canForwardAll && (
+          <button
+            onClick={() => onForwardLink(selections)}
+            className="flex-1 rounded bg-slate-800 px-3 py-1.5 text-sm font-medium text-white"
+          >
+            Forward all links' content
+          </button>
+        )}
+      </div>
 
       <div className="border-t border-slate-100 pt-3">
         <label className="text-xs font-medium text-slate-500">Context for agents</label>
@@ -243,17 +265,6 @@ function MultiInspector({
           Add context to all
         </button>
       </div>
-
-      {canForwardAll && (
-        <div className="border-t border-slate-100 pt-3">
-          <button
-            onClick={() => onForwardLink(selections)}
-            className="w-full rounded bg-slate-800 px-3 py-1.5 text-sm font-medium text-white"
-          >
-            Forward all links' content
-          </button>
-        </div>
-      )}
     </div>
   );
 }
