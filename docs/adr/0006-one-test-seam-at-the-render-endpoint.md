@@ -13,3 +13,14 @@ the payload") and survive any internal reshaping of the components that produce 
 trade-off is coarser failure localisation: a broken emitter and a broken resolver can fail the
 same test. This is deliberate — a suite coupled to internal structure goes red on the first
 refactor and gets deleted rather than repaired.
+
+## Update
+
+Practice diverged from this as the resolver, sanitizer, and emitters grew their own edge cases
+(drift and re-anchor tiers, shadowing, base-href rewriting) that were awkward to provoke through
+the render endpoint alone — the same reasoning this ADR already applied to the SSRF guard and
+URL normalization turned out to apply far more broadly than anticipated. Nearly every module
+under `apps/server/src` now has its own unit test file alongside `render-page.test.ts`, which
+still carries the product-level, endpoint-shaped tests this ADR describes. Failure localisation
+won out over the original bet more often than expected; the "read as a product statement"
+tests haven't gone away, they're just no longer the only layer.
