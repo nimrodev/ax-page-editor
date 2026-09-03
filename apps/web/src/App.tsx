@@ -124,6 +124,33 @@ export default function App() {
   const [pendingContextAxId, setPendingContextAxId] = useState<string | null>(null);
   const [contextFocusToken, setContextFocusToken] = useState(0);
   const isDirty = serializeModifications(modifications) !== serializeModifications(savedModifications);
+  // One snapshot per edit (hide/context/forward/remove) — Undo pops the
+  // most recent one. Loading a page or discarding changes back to the
+  // saved baseline (handleReset) clear this outright rather than adding
+  // to it: neither is an edit to step back through, they're a clean
+  // slate for whatever comes next.
+  const [history, setHistory] = useState<Modification[][]>([]);
+
+  const updateModifications = useCallback((updater: (prev: Modification[]) => Modification[]) => {
+    setModifications((prev) => {
+      const next = updater(prev);
+      if (next !== prev) setHistory((h) => [...h, prev]);
+      return next;
+    });
+  }, []);
+
+  const handleUndo = useCallback(() => {
+    setHistory((h) => {
+      if (h.length === 0) return h;
+      setModifications(h[h.length - 1]);
+      return h.slice(0, -1);
+    });
+  }, []);
+
+  const handleReset = useCallback(() => {
+    setModifications(savedModifications);
+    setHistory([]);
+  }, [savedModifications]);
 
   // NIM-56: descendants are filtered out first — "where one selected
   // element contains another, hiding skips the descendant, since the
@@ -133,17 +160,20 @@ export default function App() {
   // "applying to a selection where some already carry it affects only
   // the rest, with no error and no toggling-off" true for free: an
   // already-hidden target's upsert just re-sets the same value.
-  const handleHide = useCallback((targets: Selection[]) => {
-    const kept = filterDescendants(targets);
-    setModifications((prev) => {
-      let next = prev;
-      for (const target of kept) {
-        const id = modificationId("hide", target.locator.path);
-        next = [...next.filter((m) => m.id !== id), { id, type: "hide", target: target.locator }];
-      }
-      return next;
-    });
-  }, []);
+  const handleHide = useCallback(
+    (targets: Selection[]) => {
+      const kept = filterDescendants(targets);
+      updateModifications((prev) => {
+        let next = prev;
+        for (const target of kept) {
+          const id = modificationId("hide", target.locator.path);
+          next = [...next.filter((m) => m.id !== id), { id, type: "hide", target: target.locator }];
+        }
+        return next;
+      });
+    },
+    [updateModifications],
+  );
 
   const handleSelect = useCallback(
     (next: Selection[]) => {
@@ -221,33 +251,42 @@ export default function App() {
   // no descendant filtering here (unlike hide): a context note on a
   // container and one on something inside it are both meaningful at
   // once, so there's no "already covered" case to skip.
-  const handleSetContext = useCallback((targets: Selection[], text: string) => {
-    setModifications((prev) => {
-      let next = prev;
-      for (const target of targets) {
-        const id = modificationId("context", target.locator.path);
-        next = [...next.filter((m) => m.id !== id), { id, type: "context", target: target.locator, value: { text } }];
-      }
-      return next;
-    });
-  }, []);
+  const handleSetContext = useCallback(
+    (targets: Selection[], text: string) => {
+      updateModifications((prev) => {
+        let next = prev;
+        for (const target of targets) {
+          const id = modificationId("context", target.locator.path);
+          next = [...next.filter((m) => m.id !== id), { id, type: "context", target: target.locator, value: { text } }];
+        }
+        return next;
+      });
+    },
+    [updateModifications],
+  );
 
-  const handleForwardLink = useCallback((targets: Selection[]) => {
-    setModifications((prev) => {
-      let next = prev;
-      for (const target of targets) {
-        const href = target.href;
-        if (!href) continue;
-        const id = modificationId("forwardLink", target.locator.path);
-        next = [...next.filter((m) => m.id !== id), { id, type: "forwardLink", target: target.locator, value: { href } }];
-      }
-      return next;
-    });
-  }, []);
+  const handleForwardLink = useCallback(
+    (targets: Selection[]) => {
+      updateModifications((prev) => {
+        let next = prev;
+        for (const target of targets) {
+          const href = target.href;
+          if (!href) continue;
+          const id = modificationId("forwardLink", target.locator.path);
+          next = [...next.filter((m) => m.id !== id), { id, type: "forwardLink", target: target.locator, value: { href } }];
+        }
+        return next;
+      });
+    },
+    [updateModifications],
+  );
 
-  const handleRemove = useCallback((id: string) => {
-    setModifications((prev) => prev.filter((m) => m.id !== id));
-  }, []);
+  const handleRemove = useCallback(
+    (id: string) => {
+      updateModifications((prev) => prev.filter((m) => m.id !== id));
+    },
+    [updateModifications],
+  );
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -268,6 +307,7 @@ export default function App() {
     setSelections([]);
     setModifications([]);
     setSavedModifications([]);
+    setHistory([]);
     setLoadedInfo(null);
     setSaveStatus("idle");
     try {
@@ -373,27 +413,6 @@ export default function App() {
           >
             {state.status === "loading" ? "Loading…" : "Load page"}
           </button>
-          {state.status === "ready" && (
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={!isDirty || saveStatus === "saving"}
-                className="rounded border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 disabled:opacity-50"
-              >
-                {saveStatus === "saving" ? "Saving…" : "Save"}
-              </button>
-              <span className="text-xs text-slate-500">
-                {isDirty
-                  ? "Unsaved changes"
-                  : saveStatus === "saved"
-                    ? "Saved"
-                    : saveStatus === "error"
-                      ? "Couldn't save — try again"
-                      : null}
-              </span>
-            </div>
-          )}
         </form>
       </header>
 
@@ -412,6 +431,57 @@ export default function App() {
 
         {state.status === "ready" && (
           <div>
+            {/*
+              Undo/Reset (history) and Save (commit) are two different
+              kinds of action on the same editing session, not one flat
+              row — grouping them at opposite ends of one bar, rather
+              than bolting Save onto the URL form next to "Load page",
+              keeps "load a different page" and "manage this page's
+              edits" from reading as the same kind of action.
+            */}
+            <div className="mb-3 flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+              <div className="inline-flex overflow-hidden rounded-lg border border-slate-200">
+                <button
+                  type="button"
+                  onClick={handleUndo}
+                  disabled={history.length === 0}
+                  title="Undo the last change"
+                  className="border-r border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+                >
+                  ↶ Undo
+                </button>
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  disabled={!isDirty}
+                  title="Discard changes since the last save"
+                  className="px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+                >
+                  Reset
+                </button>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-slate-500">
+                  {isDirty
+                    ? "Unsaved changes"
+                    : saveStatus === "saved"
+                      ? "Saved"
+                      : saveStatus === "error"
+                        ? "Couldn't save — try again"
+                        : null}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={!isDirty || saveStatus === "saving"}
+                  className="rounded-lg bg-slate-900 px-4 py-1.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-slate-900"
+                >
+                  {saveStatus === "saving" ? "Saving…" : "Save changes"}
+                </button>
+              </div>
+            </div>
+
             {loadedInfo && (
               <div className="mb-3 flex items-center justify-between rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
                 <span>
