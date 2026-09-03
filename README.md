@@ -100,6 +100,12 @@ ordinary site edits. `resolveLocator` grades the result into four tiers: `exact`
 gets flagged "needs review" on drift, since its point may no longer hold; a hide and a forward
 apply through drift and re-anchor unchanged. Details: [ADR-0003](docs/adr/0003-composite-locator-with-graded-resolution.md).
 
+The tier itself is internal — it decides behavior server-side (needs-review, shadowing,
+whether a stale locator counts as "unresolved") but is never sent to the browser as a raw
+value. The publisher only ever sees the *consequence*: an "Unresolved" badge (`stale`), a
+"Shadowed" badge (resolved, but inside a hidden ancestor), or a "Needs review" badge (a context
+note on `drift`) — never the tier name itself.
+
 **Where a context note lives in the payload.** As a real, parseable text node next to its
 target element (`<span data-ax-context>` in HTML, an adjacent block in Markdown) — never as a
 `data-*` attribute alone, an HTML comment, or an `aria-label`. Most agents flatten a page to
