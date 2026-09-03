@@ -6,7 +6,7 @@ import { HumanPreview, Selection } from "./HumanPreview";
 import { Inspector } from "./Inspector";
 import { AgentPayloadView } from "./AgentPayloadView";
 import { relativeTime } from "./relative-time";
-import { buildReviewEntries, ReviewPanel } from "./ReviewPanel";
+import { buildResolutionSummary, buildReviewEntries, ReviewPanel } from "./ReviewPanel";
 import { MODIFICATION_MARK_COLORS, SHARED_ELEMENT_MARK_COLOR } from "./iframe-overlay";
 
 type LoadState =
@@ -344,6 +344,15 @@ export default function App() {
     if (next === "human") setHumanViewRequested(true);
   }
 
+  // Shared between ReviewPanel and Human view's own unresolved reminder
+  // below — both need the same entries, and computing it twice would risk
+  // the two silently disagreeing about what counts as unresolved.
+  const reviewEntries = buildReviewEntries(
+    modifications,
+    state.status === "ready" ? state.payload.modificationStatuses : [],
+  );
+  const reviewResolutionSummary = buildResolutionSummary(reviewEntries);
+
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-white px-6 py-4">
@@ -474,6 +483,23 @@ export default function App() {
             {humanViewRequested && (
               <div ref={humanViewRef} style={{ display: view === "human" ? "flex" : "none" }} className="gap-4">
                 <div className="flex-1">
+                  {/*
+                    Agent view's ModificationNavigator pill always surfaces
+                    its unresolved count, impossible to miss — Human view had
+                    no equivalent, so a publisher who'd only seen that pill
+                    could switch tabs and find nothing telling them the same
+                    modifications were still unresolved here. Unlike
+                    ReviewPanel's own banner below, this isn't gated on the
+                    "broad failure" threshold: it exists specifically for the
+                    smaller counts that threshold is designed to stay quiet
+                    about, so the two don't just duplicate each other.
+                  */}
+                  {reviewResolutionSummary.unresolvedCount > 0 && (
+                    <p className="mb-2 rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-900">
+                      {reviewResolutionSummary.unresolvedCount} of {reviewResolutionSummary.total} modifications
+                      couldn't be matched to this page — see the list below.
+                    </p>
+                  )}
                   <div className="mb-2 flex items-center gap-4 text-xs text-slate-500">
                     <span className="font-medium text-slate-600">Marked on the page:</span>
                     <span className="flex items-center gap-1.5">
@@ -524,14 +550,7 @@ export default function App() {
                     onForwardLink={handleForwardLink}
                     focusContextRequest={contextFocusToken}
                   />
-                  <ReviewPanel
-                    entries={buildReviewEntries(
-                      modifications,
-                      state.status === "ready" ? state.payload.modificationStatuses : [],
-                    )}
-                    onReveal={handleReveal}
-                    onRemove={handleRemove}
-                  />
+                  <ReviewPanel entries={reviewEntries} onReveal={handleReveal} onRemove={handleRemove} />
                 </div>
               </div>
             )}
