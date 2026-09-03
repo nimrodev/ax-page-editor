@@ -71,9 +71,15 @@ re-anchoring, and going stale are real states a modification can be in, not edge
 flowchart TB
     Browser["<b>Browser</b> — apps/web<br/>Inspector · Human view · Agent view"]
 
-    subgraph Pipeline["Server — apps/server, one pass per render"]
+    Browser -- "① load saved modifications" --> ConfigAPI["Configuration API<br/>configuration.controller.ts"]
+    ConfigAPI <-- "read / write" --> Database[("configurations.sqlite<br/>one JSON doc per URL<br/><i>modifications only — never page content</i>")]
+    ConfigAPI -- "saved modifications, if any" --> Browser
+
+    Browser -- "② render (url + modifications)" --> RenderAPI
+
+    subgraph RenderAPI["Render API — page.controller.ts — always live, never reads the database"]
         direction TB
-        Step1["1 · Fetch the target page"]
+        Step1["1 · Fetch the target page<br/><i>SSRF-guarded — see ssrf-guard.ts</i>"]
         Step2["2 · Sanitize<br/>(strip scripts, iframes, handlers)"]
         Step3["3 · Assign ax-ids"]
         Step4["4 · Resolve each modification's locator<br/>(exact · drift · re-anchor · stale)"]
@@ -84,13 +90,16 @@ flowchart TB
     end
 
     TargetPage[("Target page<br/>third-party URL")]
-    Database[("configurations.sqlite<br/>one JSON doc per URL")]
+    Step1 --> TargetPage
 
-    Browser -- "load / save configuration" --> Pipeline
-    Pipeline -- "SSRF-guarded fetch" --> TargetPage
-    Pipeline -- "save / load" --> Database
-    Pipeline -- "rendered payload" --> Browser
+    RenderAPI -- "rendered payload" --> Browser
 ```
+
+Two independent request flows, not one — a render never reads the database, and a
+configuration save/load never fetches a page. **A previously-saved page's *content* is never
+served from SQLite**: only its list of modifications is. Every render re-fetches the target
+page live, whether this is the first time it's been opened or the hundredth (ADR-0001) — the
+database only ever answers "what did the publisher ask for," never "what does the page say."
 
 **How a modification finds its element.** A modification targets a *locator* — a structural
 path plus a content fingerprint — never a live DOM reference, which is what lets it survive
